@@ -135,13 +135,39 @@
             margin-bottom: 6px;
             line-height: 1.4;
         }
+
+        #helperBtn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #4caf50;
+            border: 2px solid #4caf50;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 10;
+        }
+
+        #helperBtn:hover {
+            background: rgba(76, 175, 80, 0.2);
+        }
+
+        #helperBtn.active {
+            background: #4caf50;
+            color: white;
+        }
     </style>
 </head>
 <body>
     <div id="ui">
         <div id="timer">0.0s</div>
-        <div id="hints">Arrow keys to row • R to restart</div>
+        <div id="hints">Arrow keys to row • R to restart • H for helper</div>
     </div>
+
+    <button id="helperBtn">Helper: Off</button>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -188,6 +214,11 @@
         const PREDICTION_HORIZON = 0.35; // seconds
         const MAX_DT = 0.05; // clamp frame time spikes
 
+        // Helper math constants
+        const SPEED_RATIO = 4; // k = 4 (goblin is 4x faster)
+        const CRITICAL_RADIUS = LAKE_RADIUS / SPEED_RATIO; // r* = R/k
+        const SAFE_RADIUS = CRITICAL_RADIUS * 0.95; // rSafe (with safety margin)
+
         // ===== HELPER FUNCTIONS =====
         function clamp(value, min, max) {
             return Math.max(min, Math.min(max, value));
@@ -222,6 +253,7 @@
         let gameState = 'playing'; // 'playing' | 'won' | 'lost'
         let timer = 0;
         let lastTime = performance.now();
+        let helperEnabled = false; // Helper path toggle
 
         // Player
         const player = {
@@ -254,6 +286,7 @@
             if (e.key === 'ArrowLeft') keys.left = true;
             if (e.key === 'ArrowRight') keys.right = true;
             if (e.key === 'r' || e.key === 'R') restart();
+            if (e.key === 'h' || e.key === 'H') toggleHelper();
         });
 
         document.addEventListener('keyup', (e) => {
@@ -264,6 +297,19 @@
         });
 
         document.getElementById('restartBtn').addEventListener('click', restart);
+        document.getElementById('helperBtn').addEventListener('click', toggleHelper);
+
+        function toggleHelper() {
+            helperEnabled = !helperEnabled;
+            const helperBtn = document.getElementById('helperBtn');
+            if (helperEnabled) {
+                helperBtn.textContent = 'Helper: On';
+                helperBtn.classList.add('active');
+            } else {
+                helperBtn.textContent = 'Helper: Off';
+                helperBtn.classList.remove('active');
+            }
+        }
 
         function restart() {
             gameState = 'playing';
@@ -418,6 +464,11 @@
             // Draw player boat
             drawBoat();
 
+            // Draw helper path
+            if (helperEnabled && gameState === 'playing') {
+                drawHelperPath();
+            }
+
             // Draw debug line (player to goblin target)
             if (gameState === 'playing') {
                 ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)';
@@ -563,6 +614,78 @@
             ctx.stroke();
 
             ctx.restore();
+        }
+
+        function drawHelperPath() {
+            // Calculate current state
+            const rb = length(player.x, player.y); // boat radius
+            const thetaB = Math.atan2(player.y, player.x); // boat angle
+            const thetaG = goblin.theta; // goblin angle
+
+            // Target opposite angle
+            const thetaOpp = wrapAngle(thetaG + Math.PI);
+
+            // Helper path styling
+            ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 8]);
+
+            // Goal A: Move to safe radius if outside
+            if (rb > SAFE_RADIUS) {
+                // Draw radial line from current position to safe radius
+                const norm = normalize(player.x, player.y);
+                const targetX = norm.x * SAFE_RADIUS;
+                const targetY = norm.y * SAFE_RADIUS;
+
+                ctx.beginPath();
+                ctx.moveTo(player.x, player.y);
+                ctx.lineTo(targetX, targetY);
+                ctx.stroke();
+            }
+
+            // Goal B: Draw arc to opposite position at safe radius
+            // Project current boat angle to safe radius
+            const currentAngle = rb < SAFE_RADIUS ? thetaB : thetaB;
+            const angleDiff = shortestAngularDiff(currentAngle, thetaOpp);
+
+            // Draw arc on safe radius circle
+            const startAngle = currentAngle;
+            const endAngle = thetaOpp;
+
+            // Draw the arc in the shorter direction
+            ctx.beginPath();
+            if (angleDiff > 0) {
+                // Counter-clockwise
+                ctx.arc(0, 0, SAFE_RADIUS, startAngle, endAngle, false);
+            } else {
+                // Clockwise
+                ctx.arc(0, 0, SAFE_RADIUS, startAngle, endAngle, false);
+            }
+            ctx.stroke();
+
+            // Goal C: Draw escape line to shore when nearly opposite
+            if (Math.abs(angleDiff) < 0.15) {
+                const escapeStartX = Math.cos(thetaOpp) * SAFE_RADIUS;
+                const escapeStartY = Math.sin(thetaOpp) * SAFE_RADIUS;
+                const escapeEndX = Math.cos(thetaOpp) * LAKE_RADIUS;
+                const escapeEndY = Math.sin(thetaOpp) * LAKE_RADIUS;
+
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+                ctx.beginPath();
+                ctx.moveTo(escapeStartX, escapeStartY);
+                ctx.lineTo(escapeEndX, escapeEndY);
+                ctx.stroke();
+            }
+
+            // Draw safe radius circle for reference
+            ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Reset line dash
+            ctx.setLineDash([]);
         }
 
         function showGameOver(won) {
