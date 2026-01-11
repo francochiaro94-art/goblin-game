@@ -646,6 +646,23 @@
         .leaf:nth-child(7) { left: 70%; animation-delay: 1.8s; }
         .leaf:nth-child(8) { left: 80%; animation-delay: 2.1s; }
         .leaf:nth-child(9) { left: 90%; animation-delay: 2.4s; }
+
+        #distanceChart {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(135deg, var(--parchment), var(--parchment-dark));
+            border: 2px solid var(--bark-dark);
+            border-radius: 8px;
+            display: block;
+        }
+
+        .chart-card {
+            max-height: 280px;
+        }
+
+        .chart-card .card-header::before {
+            content: '📊';
+        }
     </style>
 </head>
 <body>
@@ -703,6 +720,11 @@
                     <p>• Enable AI Control to watch the optimal strategy</p>
                 </div>
             </div>
+
+            <div class="control-card chart-card">
+                <div class="card-header">Distance Tracker</div>
+                <canvas id="distanceChart"></canvas>
+            </div>
         </div>
     </div>
 
@@ -727,6 +749,25 @@
         }
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
+
+        // ===== DISTANCE CHART SETUP =====
+        const chartCanvas = document.getElementById('distanceChart');
+        const chartCtx = chartCanvas.getContext('2d');
+
+        function resizeChartCanvas() {
+            const rect = chartCanvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            chartCanvas.width = rect.width * dpr;
+            chartCanvas.height = rect.height * dpr;
+            chartCanvas.style.width = rect.width + 'px';
+            chartCanvas.style.height = rect.height + 'px';
+        }
+        resizeChartCanvas();
+        window.addEventListener('resize', resizeChartCanvas);
+
+        let distanceData = [];
+        let lastDataUpdate = 0;
+        const DATA_UPDATE_INTERVAL = 0.1; // 100ms
 
         // ===== CONSTANTS =====
         const LAKE_RADIUS = Math.min(canvas.width, canvas.height) / (2 * dpr) * 0.38;
@@ -941,6 +982,8 @@
             aiDashAngle = 0;
             aiAlignedTime = 0;
             aiLastThetaB = 0;
+            distanceData = [];
+            lastDataUpdate = 0;
             document.getElementById('gameOver').classList.remove('show');
             const particles = document.querySelector('.victory-particles');
             if (particles) particles.remove();
@@ -955,6 +998,18 @@
 
             player.bobPhase += dt * 3;
             goblin.bobPhase += dt * 5;
+
+            // Update distance data every 100ms
+            lastDataUpdate += dt;
+            if (lastDataUpdate >= DATA_UPDATE_INTERVAL) {
+                const goblinX = Math.cos(goblin.theta) * LAKE_RADIUS;
+                const goblinY = Math.sin(goblin.theta) * LAKE_RADIUS;
+                const distance = Math.sqrt(
+                    Math.pow(player.x - goblinX, 2) + Math.pow(player.y - goblinY, 2)
+                );
+                distanceData.push({ time: timer, distance: distance });
+                lastDataUpdate = 0;
+            }
 
             let dx = 0, dy = 0;
 
@@ -1552,6 +1607,138 @@
             document.getElementById('gameStage').appendChild(particles);
         }
 
+        function drawDistanceChart() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = chartCanvas.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
+            const padding = { top: 20, right: 20, bottom: 30, left: 50 };
+            const plotWidth = width - padding.left - padding.right;
+            const plotHeight = height - padding.top - padding.bottom;
+
+            // Clear canvas
+            chartCtx.save();
+            chartCtx.scale(dpr, dpr);
+            chartCtx.fillStyle = '#f4e8d4';
+            chartCtx.fillRect(0, 0, width, height);
+
+            if (distanceData.length < 2) {
+                // Show placeholder text
+                chartCtx.fillStyle = '#6b523a';
+                chartCtx.font = '14px Georgia';
+                chartCtx.textAlign = 'center';
+                chartCtx.textBaseline = 'middle';
+                chartCtx.fillText('Tracking distance...', width / 2, height / 2);
+                chartCtx.restore();
+                return;
+            }
+
+            // Calculate scales
+            const maxTime = Math.max(...distanceData.map(d => d.time));
+            const maxDistance = Math.max(...distanceData.map(d => d.distance));
+            const minDistance = Math.min(...distanceData.map(d => d.distance));
+            const distanceRange = maxDistance - minDistance;
+            const distancePadding = distanceRange * 0.1;
+            const yMin = Math.max(0, minDistance - distancePadding);
+            const yMax = maxDistance + distancePadding;
+
+            // Draw axes
+            chartCtx.strokeStyle = '#6b523a';
+            chartCtx.lineWidth = 2;
+            chartCtx.beginPath();
+            chartCtx.moveTo(padding.left, padding.top);
+            chartCtx.lineTo(padding.left, height - padding.bottom);
+            chartCtx.lineTo(width - padding.right, height - padding.bottom);
+            chartCtx.stroke();
+
+            // Draw grid lines (horizontal)
+            chartCtx.strokeStyle = 'rgba(107, 82, 58, 0.2)';
+            chartCtx.lineWidth = 1;
+            const numYGridLines = 4;
+            for (let i = 0; i <= numYGridLines; i++) {
+                const y = padding.top + (plotHeight / numYGridLines) * i;
+                chartCtx.beginPath();
+                chartCtx.moveTo(padding.left, y);
+                chartCtx.lineTo(width - padding.right, y);
+                chartCtx.stroke();
+
+                // Y-axis labels
+                const distValue = yMax - (yMax - yMin) * (i / numYGridLines);
+                chartCtx.fillStyle = '#6b523a';
+                chartCtx.font = '11px Georgia';
+                chartCtx.textAlign = 'right';
+                chartCtx.textBaseline = 'middle';
+                chartCtx.fillText(distValue.toFixed(0) + 'm', padding.left - 5, y);
+            }
+
+            // Draw grid lines (vertical)
+            const numXGridLines = Math.min(5, Math.floor(maxTime));
+            for (let i = 0; i <= numXGridLines; i++) {
+                const x = padding.left + (plotWidth / numXGridLines) * i;
+                chartCtx.strokeStyle = 'rgba(107, 82, 58, 0.2)';
+                chartCtx.lineWidth = 1;
+                chartCtx.beginPath();
+                chartCtx.moveTo(x, padding.top);
+                chartCtx.lineTo(x, height - padding.bottom);
+                chartCtx.stroke();
+
+                // X-axis labels
+                const timeValue = (maxTime / numXGridLines) * i;
+                chartCtx.fillStyle = '#6b523a';
+                chartCtx.font = '11px Georgia';
+                chartCtx.textAlign = 'center';
+                chartCtx.textBaseline = 'top';
+                chartCtx.fillText(timeValue.toFixed(1) + 's', x, height - padding.bottom + 5);
+            }
+
+            // Draw data line
+            chartCtx.strokeStyle = '#2b6a8f';
+            chartCtx.lineWidth = 2.5;
+            chartCtx.beginPath();
+
+            for (let i = 0; i < distanceData.length; i++) {
+                const point = distanceData[i];
+                const x = padding.left + (point.time / maxTime) * plotWidth;
+                const y = height - padding.bottom - ((point.distance - yMin) / (yMax - yMin)) * plotHeight;
+
+                if (i === 0) {
+                    chartCtx.moveTo(x, y);
+                } else {
+                    chartCtx.lineTo(x, y);
+                }
+            }
+            chartCtx.stroke();
+
+            // Draw data points
+            chartCtx.fillStyle = '#4a9ac9';
+            for (let i = 0; i < distanceData.length; i++) {
+                const point = distanceData[i];
+                const x = padding.left + (point.time / maxTime) * plotWidth;
+                const y = height - padding.bottom - ((point.distance - yMin) / (yMax - yMin)) * plotHeight;
+
+                chartCtx.beginPath();
+                chartCtx.arc(x, y, 2, 0, Math.PI * 2);
+                chartCtx.fill();
+            }
+
+            // Draw axis labels
+            chartCtx.fillStyle = '#6b523a';
+            chartCtx.font = 'bold 12px Georgia';
+            chartCtx.textAlign = 'center';
+            chartCtx.textBaseline = 'bottom';
+            chartCtx.fillText('Time (seconds)', width / 2, height - 5);
+
+            chartCtx.save();
+            chartCtx.translate(12, height / 2);
+            chartCtx.rotate(-Math.PI / 2);
+            chartCtx.textAlign = 'center';
+            chartCtx.textBaseline = 'bottom';
+            chartCtx.fillText('Distance (meters)', 0, 0);
+            chartCtx.restore();
+
+            chartCtx.restore();
+        }
+
         // ===== GAME LOOP =====
         function gameLoop(currentTime) {
             let dt = (currentTime - lastTime) / 1000;
@@ -1561,6 +1748,7 @@
 
             update(dt);
             draw();
+            drawDistanceChart();
 
             requestAnimationFrame(gameLoop);
         }
