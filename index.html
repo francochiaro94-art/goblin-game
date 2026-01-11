@@ -194,6 +194,30 @@
             text-align: center;
             margin-top: 6px;
         }
+
+        #aiBtn {
+            position: absolute;
+            top: 160px;
+            right: 20px;
+            padding: 10px 20px;
+            font-size: 14px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #ff9800;
+            border: 2px solid #ff9800;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            z-index: 10;
+        }
+
+        #aiBtn:hover {
+            background: rgba(255, 152, 0, 0.2);
+        }
+
+        #aiBtn.active {
+            background: #ff9800;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -210,6 +234,8 @@
         <span id="speedValue">4.0x faster</span>
     </div>
 
+    <button id="aiBtn">AI Control: Off</button>
+
     <canvas id="gameCanvas"></canvas>
 
     <div id="gameOver">
@@ -223,8 +249,8 @@
         <p>• Row with arrow keys or mouse/trackpad</p>
         <p>• Reach the shore before the goblin catches you</p>
         <p>• Adjust goblin speed with the slider (0.5x-4.3x)</p>
-        <p>• Use spiral patterns to confuse the goblin</p>
         <p>• Press H to toggle helper guide</p>
+        <p>• Enable AI Control to watch the optimal strategy</p>
     </div>
 
     <script>
@@ -306,6 +332,7 @@
         let timer = 0;
         let lastTime = performance.now();
         let helperEnabled = false; // Helper path toggle
+        let aiControlEnabled = false; // AI autopilot toggle
 
         // Player
         const player = {
@@ -372,6 +399,7 @@
 
         document.getElementById('restartBtn').addEventListener('click', restart);
         document.getElementById('helperBtn').addEventListener('click', toggleHelper);
+        document.getElementById('aiBtn').addEventListener('click', toggleAI);
 
         // Speed slider control
         const speedSlider = document.getElementById('speedSlider');
@@ -391,6 +419,18 @@
             } else {
                 helperBtn.textContent = 'Helper: Off';
                 helperBtn.classList.remove('active');
+            }
+        }
+
+        function toggleAI() {
+            aiControlEnabled = !aiControlEnabled;
+            const aiBtn = document.getElementById('aiBtn');
+            if (aiControlEnabled) {
+                aiBtn.textContent = 'AI Control: On';
+                aiBtn.classList.add('active');
+            } else {
+                aiBtn.textContent = 'AI Control: Off';
+                aiBtn.classList.remove('active');
             }
         }
 
@@ -427,24 +467,77 @@
             // Player movement - instant response (no inertia)
             let dx = 0, dy = 0;
 
-            // Keyboard controls
-            if (keys.up) dy -= 1;
-            if (keys.down) dy += 1;
-            if (keys.left) dx -= 1;
-            if (keys.right) dx += 1;
+            // AI Control (optimal strategy)
+            if (aiControlEnabled) {
+                const rb = length(player.x, player.y); // boat radius
+                const thetaB = Math.atan2(player.y, player.x); // boat angle
+                const thetaG = goblin.theta; // goblin angle
+                const thetaOpp = wrapAngle(thetaG + Math.PI); // opposite angle
+                const safeRadius = getSafeRadius();
+                const RING_TOL = 10;
+                const ALIGN_TOL = 0.20;
 
-            // Mouse/trackpad controls
-            if (keys.mouseActive) {
-                const centerX = canvas.width / (2 * dpr);
-                const centerY = canvas.height / (2 * dpr);
-                const targetX = keys.mouseX - centerX;
-                const targetY = keys.mouseY - centerY;
-                const distToTarget = length(targetX - player.x, targetY - player.y);
+                // Calculate angular error
+                const err = Math.abs(shortestAngularDiff(thetaB, thetaOpp));
 
-                if (distToTarget > 5) {
-                    const norm = normalize(targetX - player.x, targetY - player.y);
+                // PHASE 1: Get to safe ring
+                if (rb > safeRadius + RING_TOL) {
+                    // Move toward center (radially inward)
+                    const norm = normalize(player.x, player.y);
+                    dx = -norm.x; // Move inward
+                    dy = -norm.y;
+                } else if (rb < safeRadius - RING_TOL) {
+                    // Move outward to ring
+                    const norm = normalize(player.x, player.y);
+                    dx = norm.x; // Move outward
+                    dy = norm.y;
+                }
+                // PHASE 3: Sprint to shore (aligned)
+                else if (err <= ALIGN_TOL) {
+                    // Sprint straight out
+                    const norm = normalize(player.x, player.y);
                     dx = norm.x;
                     dy = norm.y;
+                }
+                // PHASE 2: Circle on ring to opposite position
+                else {
+                    // Determine which direction to circle
+                    const angleDiff = shortestAngularDiff(thetaB, thetaOpp);
+
+                    // Move tangentially along the ring
+                    const tangentAngle = thetaB + (angleDiff > 0 ? Math.PI / 2 : -Math.PI / 2);
+                    dx = Math.cos(tangentAngle);
+                    dy = Math.sin(tangentAngle);
+
+                    // Also adjust radially to stay on ring
+                    const radialError = rb - safeRadius;
+                    const radialCorrection = -radialError * 0.1; // Gentle correction
+                    const norm = normalize(player.x, player.y);
+                    dx += norm.x * radialCorrection;
+                    dy += norm.y * radialCorrection;
+                }
+            }
+            // Manual controls
+            else {
+                // Keyboard controls
+                if (keys.up) dy -= 1;
+                if (keys.down) dy += 1;
+                if (keys.left) dx -= 1;
+                if (keys.right) dx += 1;
+
+                // Mouse/trackpad controls
+                if (keys.mouseActive) {
+                    const centerX = canvas.width / (2 * dpr);
+                    const centerY = canvas.height / (2 * dpr);
+                    const targetX = keys.mouseX - centerX;
+                    const targetY = keys.mouseY - centerY;
+                    const distToTarget = length(targetX - player.x, targetY - player.y);
+
+                    if (distToTarget > 5) {
+                        const norm = normalize(targetX - player.x, targetY - player.y);
+                        dx = norm.x;
+                        dy = norm.y;
+                    }
                 }
             }
 
