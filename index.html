@@ -472,90 +472,76 @@
             // AI Control (optimal strategy with hysteresis)
             if (aiControlEnabled) {
                 const rb = length(player.x, player.y); // boat radius
-                const thetaB = Math.atan2(player.y, player.x); // boat angle
                 const thetaG = goblin.theta; // goblin angle
                 const thetaOpp = wrapAngle(thetaG + Math.PI); // opposite angle
                 const safeRadius = getSafeRadius();
 
-                // Calculate angular error to opposite position
-                const err = Math.abs(shortestAngularDiff(thetaB, thetaOpp));
+                // Thresholds
+                const INNER_RING = safeRadius - 15;
+                const OUTER_RING = safeRadius + 15;
 
-                // Dynamic thresholds with hysteresis
-                const DASH_ALIGN_TIGHT = 0.15; // ~8.6 degrees - trigger dash
-                const DASH_ALIGN_LOOSE = 0.30; // ~17 degrees - keep dashing once started
-                const INNER_RING = safeRadius - 15; // Inner boundary with margin
-                const OUTER_RING = safeRadius + 15; // Outer boundary with margin
-                const TARGET_RING = safeRadius; // Ideal ring to orbit on
-
-                // Special case: At or near center (rb ≈ 0)
-                if (rb < 5) {
-                    // Move directly away from goblin (toward opposite side)
+                // SPECIAL CASE: At center - move toward opposite side of goblin
+                if (rb < 8) {
                     dx = Math.cos(thetaOpp);
                     dy = Math.sin(thetaOpp);
+                    // Don't change state - let it naturally transition once away from center
                 }
-                // Priority 1: DASH STATE - once committed, go straight to shore
+                // DASH STATE: Committed to sprinting to shore
                 else if (aiState === 'dash') {
-                    // COMMIT to the dash - no turning back!
-                    // Just go straight radially outward to shore
+                    // NO CHECKS - just go straight out radially
                     const norm = normalize(player.x, player.y);
                     dx = norm.x;
                     dy = norm.y;
-                    // Note: Game will end (win/lose) when reaching shore, so no need to check exit condition
                 }
-                // Priority 2: APPROACH - Get to the safe ring zone
-                else if (aiState === 'approach') {
-                    // Check if aligned well enough to dash early
-                    if (rb >= INNER_RING && rb <= safeRadius && err <= DASH_ALIGN_TIGHT) {
-                        // Opportunistic dash from approach phase!
+                // NOT DASHING: Need to decide what to do
+                else {
+                    const thetaB = Math.atan2(player.y, player.x); // boat angle
+                    const err = Math.abs(shortestAngularDiff(thetaB, thetaOpp));
+
+                    // Check if we can dash (aligned well AND in safe zone)
+                    const canDash = (err <= 0.12) && (rb >= INNER_RING && rb <= OUTER_RING);
+
+                    if (canDash) {
+                        // COMMIT TO DASH!
                         aiState = 'dash';
                         const norm = normalize(player.x, player.y);
                         dx = norm.x;
                         dy = norm.y;
-                    } else if (rb > OUTER_RING) {
-                        // Move radially inward toward safe ring
+                    }
+                    // APPROACH: Need to get to the ring
+                    else if (rb > OUTER_RING) {
+                        aiState = 'approach';
+                        // Move radially inward
                         const norm = normalize(player.x, player.y);
                         dx = -norm.x;
                         dy = -norm.y;
-                    } else if (rb < INNER_RING) {
-                        // Move radially outward toward safe ring
-                        const norm = normalize(player.x, player.y);
-                        dx = norm.x;
-                        dy = norm.y;
-                    } else {
-                        // Reached the ring zone, switch to orbiting
-                        aiState = 'orbit';
                     }
-                }
-                // Priority 3: ORBIT - Circle on safe ring to get opposite goblin
-                else if (aiState === 'orbit') {
-                    // Check if well-aligned - if so, DASH IMMEDIATELY!
-                    if (err <= DASH_ALIGN_TIGHT) {
-                        // Aligned well enough - COMMIT TO DASH regardless of exact radius
-                        aiState = 'dash';
-                        const norm = normalize(player.x, player.y);
-                        dx = norm.x;
-                        dy = norm.y;
-                    }
-                    // Check if we've drifted too far from ring
-                    else if (rb > OUTER_RING || rb < INNER_RING) {
+                    else if (rb < INNER_RING) {
                         aiState = 'approach';
-                    } else {
-                        // Continue orbiting - calculate tangential direction
+                        // Move radially outward
+                        const norm = normalize(player.x, player.y);
+                        dx = norm.x;
+                        dy = norm.y;
+                    }
+                    // ORBIT: On the ring, circle to get aligned
+                    else {
+                        aiState = 'orbit';
+
+                        // Calculate which direction to circle
                         const angleDiff = shortestAngularDiff(thetaB, thetaOpp);
 
-                        // Pure tangential movement
+                        // Move tangentially in the shorter direction
                         const tangentAngle = thetaB + (angleDiff > 0 ? Math.PI / 2 : -Math.PI / 2);
                         const tangentX = Math.cos(tangentAngle);
                         const tangentY = Math.sin(tangentAngle);
 
-                        // Gentle radial correction to maintain ring position
-                        const radialError = rb - TARGET_RING;
+                        // Add radial correction to stay on ring
+                        const radialError = rb - safeRadius;
                         const norm = normalize(player.x, player.y);
-                        const radialWeight = 0.15;
 
-                        // Blend tangential and radial
-                        dx = tangentX - norm.x * radialError * radialWeight;
-                        dy = tangentY - norm.y * radialError * radialWeight;
+                        // Blend: mostly tangential, slight radial correction
+                        dx = tangentX * 0.9 - norm.x * radialError * 0.1;
+                        dy = tangentY * 0.9 - norm.y * radialError * 0.1;
                     }
                 }
             }
