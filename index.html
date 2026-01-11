@@ -497,13 +497,16 @@
                     const angularError = Math.abs(shortestAngularDiff(thetaB, thetaOpp));
 
                     // Are we well-aligned with the escape direction?
-                    const isAligned = angularError <= 0.18; // ~10 degrees
+                    const isAligned = angularError <= 0.15; // ~8.6 degrees
 
-                    // Are we ON the safe ring (not just anywhere inside)?
-                    const onRing = rb >= safeRadius - RING_TOLERANCE && rb <= safeRadius + RING_TOLERANCE;
+                    // Are we at or beyond the safe radius? (not too close to center)
+                    const atSafeRadius = rb >= safeRadius * 0.9; // Must be at least 90% of safe radius
 
-                    // ONLY dash if we're ON the ring AND aligned
-                    if (isAligned && onRing) {
+                    // Are we in the ring zone?
+                    const inRingZone = rb >= safeRadius - RING_TOLERANCE && rb <= safeRadius + RING_TOLERANCE;
+
+                    // ONLY dash if: at safe radius AND aligned AND either in orbit state or in ring zone
+                    if (isAligned && atSafeRadius && (aiState === 'orbit' || inRingZone)) {
                         aiState = 'dash';
                         const angle = Math.atan2(player.y, player.x);
                         dx = Math.cos(angle);
