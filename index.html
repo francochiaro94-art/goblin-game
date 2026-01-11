@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Goblin in the Lake</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #1a4d2e 0%, #0f2a1a 100%);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #gameCanvas {
+            background: #0f2a1a;
+            border: 3px solid #2d5a3d;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            cursor: none;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #e8f5e9;
+            font-size: 18px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+            z-index: 10;
+        }
+
+        #timer {
+            font-size: 32px;
+            font-weight: bold;
+            color: #ffeb3b;
+            margin-bottom: 10px;
+        }
+
+        #hints {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 40px 60px;
+            border-radius: 16px;
+            text-align: center;
+            color: #fff;
+            display: none;
+            border: 3px solid #4caf50;
+            z-index: 20;
+        }
+
+        #gameOver.show {
+            display: block;
+        }
+
+        #gameOver.win {
+            border-color: #4caf50;
+        }
+
+        #gameOver.lose {
+            border-color: #f44336;
+        }
+
+        #gameOver h1 {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+
+        #gameOver.win h1 {
+            color: #4caf50;
+        }
+
+        #gameOver.lose h1 {
+            color: #f44336;
+        }
+
+        #gameOver p {
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+
+        #restartBtn {
+            padding: 12px 32px;
+            font-size: 18px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #restartBtn:hover {
+            background: #66bb6a;
+            transform: scale(1.05);
+        }
+
+        #helpPanel {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 8px;
+            color: #e8f5e9;
+            max-width: 300px;
+            font-size: 13px;
+            border: 2px solid #4caf50;
+            z-index: 10;
+        }
+
+        #helpPanel h3 {
+            margin-bottom: 8px;
+            color: #4caf50;
+        }
+
+        #helpPanel p {
+            margin-bottom: 6px;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div id="timer">0.0s</div>
+        <div id="hints">Arrow keys to row • R to restart</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="gameOver">
+        <h1 id="resultText">You Win!</h1>
+        <p id="resultDetail">You escaped the goblin!</p>
+        <button id="restartBtn">Restart (R)</button>
+    </div>
+
+    <div id="helpPanel">
+        <h3>🎯 How to Win</h3>
+        <p>• Row to the shore before the goblin catches you</p>
+        <p>• The goblin runs 4× faster than you row</p>
+        <p>• Use spiral patterns to confuse the goblin</p>
+        <p>• Time your escape carefully!</p>
+    </div>
+
+    <script>
+        // ===== CANVAS SETUP =====
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const dpr = window.devicePixelRatio || 1;
+
+        function resizeCanvas() {
+            const size = Math.min(window.innerWidth * 0.9, window.innerHeight * 0.85, 800);
+            canvas.width = size * dpr;
+            canvas.height = size * dpr;
+            canvas.style.width = size + 'px';
+            canvas.style.height = size + 'px';
+            ctx.scale(dpr, dpr);
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // ===== CONSTANTS =====
+        const LAKE_RADIUS = Math.min(canvas.width, canvas.height) / (2 * dpr) * 0.38;
+        const PLAYER_RADIUS = 8;
+        const GOBLIN_RADIUS = 10;
+        const PLAYER_MAX_SPEED = 120; // px/s
+        const PLAYER_ACCEL = 300; // px/s^2
+        const PLAYER_DRAG = 0.92; // per frame (multiplier)
+        const GOBLIN_SPEED = PLAYER_MAX_SPEED * 4; // px/s
+        const CATCH_ARC_THRESHOLD = 22; // px arc distance for catching
+        const PREDICTION_HORIZON = 0.35; // seconds
+        const MAX_DT = 0.05; // clamp frame time spikes
+
+        // ===== HELPER FUNCTIONS =====
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function lerp(a, b, t) {
+            return a + (b - a) * t;
+        }
+
+        function wrapAngle(angle) {
+            while (angle > Math.PI) angle -= 2 * Math.PI;
+            while (angle < -Math.PI) angle += 2 * Math.PI;
+            return angle;
+        }
+
+        function shortestAngularDiff(from, to) {
+            let diff = to - from;
+            return wrapAngle(diff);
+        }
+
+        function length(x, y) {
+            return Math.sqrt(x * x + y * y);
+        }
+
+        function normalize(x, y) {
+            const len = length(x, y);
+            if (len === 0) return { x: 0, y: 0 };
+            return { x: x / len, y: y / len };
+        }
+
+        // ===== GAME STATE =====
+        let gameState = 'playing'; // 'playing' | 'won' | 'lost'
+        let timer = 0;
+        let lastTime = performance.now();
+
+        // Player
+        const player = {
+            x: 0,
+            y: 0,
+            vx: 0,
+            vy: 0,
+            angle: 0, // for rendering boat direction
+            bobPhase: 0
+        };
+
+        // Goblin
+        const goblin = {
+            theta: Math.random() * Math.PI * 2, // angle on circle
+            bobPhase: 0
+        };
+
+        // Input
+        const keys = {
+            up: false,
+            down: false,
+            left: false,
+            right: false
+        };
+
+        // ===== INPUT HANDLING =====
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp') keys.up = true;
+            if (e.key === 'ArrowDown') keys.down = true;
+            if (e.key === 'ArrowLeft') keys.left = true;
+            if (e.key === 'ArrowRight') keys.right = true;
+            if (e.key === 'r' || e.key === 'R') restart();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'ArrowUp') keys.up = false;
+            if (e.key === 'ArrowDown') keys.down = false;
+            if (e.key === 'ArrowLeft') keys.left = false;
+            if (e.key === 'ArrowRight') keys.right = false;
+        });
+
+        document.getElementById('restartBtn').addEventListener('click', restart);
+
+        function restart() {
+            gameState = 'playing';
+            timer = 0;
+            player.x = 0;
+            player.y = 0;
+            player.vx = 0;
+            player.vy = 0;
+            player.angle = 0;
+            player.bobPhase = 0;
+            goblin.theta = Math.random() * Math.PI * 2;
+            goblin.bobPhase = 0;
+            keys.up = false;
+            keys.down = false;
+            keys.left = false;
+            keys.right = false;
+            document.getElementById('gameOver').classList.remove('show');
+            lastTime = performance.now();
+        }
+
+        // ===== UPDATE LOGIC =====
+        function update(dt) {
+            if (gameState !== 'playing') return;
+
+            // Update timer
+            timer += dt;
+
+            // Update bob phases
+            player.bobPhase += dt * 3;
+            goblin.bobPhase += dt * 5;
+
+            // Player movement with inertia
+            let ax = 0, ay = 0;
+            if (keys.up) ay -= 1;
+            if (keys.down) ay += 1;
+            if (keys.left) ax -= 1;
+            if (keys.right) ax += 1;
+
+            // Normalize acceleration direction
+            const accelLen = length(ax, ay);
+            if (accelLen > 0) {
+                ax = (ax / accelLen) * PLAYER_ACCEL * dt;
+                ay = (ay / accelLen) * PLAYER_ACCEL * dt;
+            }
+
+            // Apply acceleration
+            player.vx += ax;
+            player.vy += ay;
+
+            // Apply drag
+            player.vx *= PLAYER_DRAG;
+            player.vy *= PLAYER_DRAG;
+
+            // Clamp speed
+            const speed = length(player.vx, player.vy);
+            if (speed > PLAYER_MAX_SPEED) {
+                player.vx = (player.vx / speed) * PLAYER_MAX_SPEED;
+                player.vy = (player.vy / speed) * PLAYER_MAX_SPEED;
+            }
+
+            // Update position
+            player.x += player.vx * dt;
+            player.y += player.vy * dt;
+
+            // Update boat angle (direction of movement)
+            if (speed > 5) {
+                player.angle = Math.atan2(player.vy, player.vx);
+            }
+
+            // Goblin AI
+            const playerAngle = Math.atan2(player.y, player.x);
+
+            // Predict player's future position
+            const futureX = player.x + player.vx * PREDICTION_HORIZON;
+            const futureY = player.y + player.vy * PREDICTION_HORIZON;
+            const predictedAngle = Math.atan2(futureY, futureX);
+
+            // Blend current and predicted (smoother tracking)
+            const targetAngle = wrapAngle(lerp(playerAngle, predictedAngle, 0.6));
+
+            // Compute shortest path to target
+            const angleDiff = shortestAngularDiff(goblin.theta, targetAngle);
+            const goblinAngularSpeed = GOBLIN_SPEED / LAKE_RADIUS; // radians per second
+            const maxMove = goblinAngularSpeed * dt;
+
+            // Move goblin (don't overshoot)
+            if (Math.abs(angleDiff) < maxMove) {
+                goblin.theta = targetAngle;
+            } else {
+                goblin.theta += Math.sign(angleDiff) * maxMove;
+            }
+            goblin.theta = wrapAngle(goblin.theta);
+
+            // Check for landing (player reaching shore)
+            const distFromCenter = length(player.x, player.y);
+            if (distFromCenter >= LAKE_RADIUS - PLAYER_RADIUS) {
+                // Player has landed!
+                const landingAngle = Math.atan2(player.y, player.x);
+                const arcDist = LAKE_RADIUS * Math.abs(shortestAngularDiff(goblin.theta, landingAngle));
+
+                if (arcDist <= CATCH_ARC_THRESHOLD) {
+                    // Goblin caught the player
+                    gameState = 'lost';
+                    showGameOver(false);
+                } else {
+                    // Player escaped!
+                    gameState = 'won';
+                    showGameOver(true);
+                }
+
+                // Stop the player at shore
+                player.vx = 0;
+                player.vy = 0;
+            }
+        }
+
+        // ===== RENDERING =====
+        function draw() {
+            const centerX = canvas.width / (2 * dpr);
+            const centerY = canvas.height / (2 * dpr);
+
+            // Clear
+            ctx.fillStyle = '#0f2a1a';
+            ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+            ctx.save();
+            ctx.translate(centerX, centerY);
+
+            // Draw background scenery (trees/rocks)
+            drawScenery();
+
+            // Draw water (lake interior)
+            drawLake();
+
+            // Draw shoreline
+            ctx.strokeStyle = '#8d6e63';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(0, 0, LAKE_RADIUS, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw shore sand
+            ctx.strokeStyle = '#d7ccc8';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, LAKE_RADIUS + 6, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw goblin
+            drawGoblin();
+
+            // Draw player boat
+            drawBoat();
+
+            // Draw debug line (player to goblin target)
+            if (gameState === 'playing') {
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                const goblinX = Math.cos(goblin.theta) * LAKE_RADIUS;
+                const goblinY = Math.sin(goblin.theta) * LAKE_RADIUS;
+                ctx.moveTo(player.x, player.y);
+                ctx.lineTo(goblinX, goblinY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            ctx.restore();
+
+            // Update timer display
+            document.getElementById('timer').textContent = timer.toFixed(1) + 's';
+        }
+
+        function drawLake() {
+            // Water gradient
+            const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, LAKE_RADIUS);
+            gradient.addColorStop(0, '#4dd0e1');
+            gradient.addColorStop(0.6, '#26c6da');
+            gradient.addColorStop(1, '#00acc1');
+            ctx.fillStyle = gradient;
+            ctx.beginPath();
+            ctx.arc(0, 0, LAKE_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Water ripples
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 3; i++) {
+                const offset = (timer * 20 + i * 30) % 100;
+                ctx.beginPath();
+                ctx.arc(0, 0, LAKE_RADIUS * 0.3 + offset, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        function drawScenery() {
+            // Trees around the lake
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2;
+                const dist = LAKE_RADIUS + 30 + Math.random() * 20;
+                const x = Math.cos(angle) * dist;
+                const y = Math.sin(angle) * dist;
+
+                // Tree trunk
+                ctx.fillStyle = '#5d4037';
+                ctx.fillRect(x - 3, y - 8, 6, 16);
+
+                // Tree foliage
+                ctx.fillStyle = '#2e7d32';
+                ctx.beginPath();
+                ctx.arc(x, y - 12, 10, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x - 5, y - 8, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(x + 5, y - 8, 8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawBoat() {
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.angle);
+
+            // Bobbing effect
+            const bobOffset = Math.sin(player.bobPhase) * 1.5;
+            ctx.translate(0, bobOffset);
+
+            // Boat hull
+            ctx.fillStyle = '#8d6e63';
+            ctx.strokeStyle = '#5d4037';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 14, 8, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Boat interior
+            ctx.fillStyle = '#d7ccc8';
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Player (simple circle)
+            ctx.fillStyle = '#ffeb3b';
+            ctx.strokeStyle = '#f57c00';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawGoblin() {
+            const x = Math.cos(goblin.theta) * LAKE_RADIUS;
+            const y = Math.sin(goblin.theta) * LAKE_RADIUS;
+
+            ctx.save();
+            ctx.translate(x, y);
+
+            // Face toward player
+            const angleToPlayer = Math.atan2(player.y - y, player.x - x);
+            ctx.rotate(angleToPlayer);
+
+            // Bobbing effect (faster than boat)
+            const bobOffset = Math.sin(goblin.bobPhase) * 2;
+            ctx.translate(0, bobOffset);
+
+            // Goblin body
+            ctx.fillStyle = '#4caf50';
+            ctx.strokeStyle = '#2e7d32';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, GOBLIN_RADIUS, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // Goblin eyes (menacing)
+            ctx.fillStyle = '#ff5722';
+            ctx.beginPath();
+            ctx.arc(-3, -2, 2, 0, Math.PI * 2);
+            ctx.arc(3, -2, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Goblin mouth (grin)
+            ctx.strokeStyle = '#2e7d32';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(0, 1, 4, 0, Math.PI);
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function showGameOver(won) {
+            const gameOverDiv = document.getElementById('gameOver');
+            const resultText = document.getElementById('resultText');
+            const resultDetail = document.getElementById('resultDetail');
+
+            gameOverDiv.classList.remove('win', 'lose');
+
+            if (won) {
+                gameOverDiv.classList.add('win');
+                resultText.textContent = 'You Win!';
+                resultDetail.textContent = `You escaped in ${timer.toFixed(1)} seconds!`;
+            } else {
+                gameOverDiv.classList.add('lose');
+                resultText.textContent = 'You Lose!';
+                resultDetail.textContent = `The goblin caught you after ${timer.toFixed(1)} seconds!`;
+            }
+
+            gameOverDiv.classList.add('show');
+        }
+
+        // ===== GAME LOOP =====
+        function gameLoop(currentTime) {
+            let dt = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+
+            // Clamp dt to prevent physics explosions
+            dt = clamp(dt, 0, MAX_DT);
+
+            update(dt);
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start the game
+        restart();
+        gameLoop(performance.now());
+    </script>
+</body>
+</html>
