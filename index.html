@@ -26,7 +26,7 @@
             background: #0f2a1a;
             border: 3px solid #2d5a3d;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-            cursor: none;
+            cursor: crosshair;
         }
 
         #ui {
@@ -164,7 +164,7 @@
 <body>
     <div id="ui">
         <div id="timer">0.0s</div>
-        <div id="hints">Arrow keys to row • R to restart • H for helper</div>
+        <div id="hints">Arrow keys or mouse to row • R to restart • H for helper</div>
     </div>
 
     <button id="helperBtn">Helper: Off</button>
@@ -179,10 +179,11 @@
 
     <div id="helpPanel">
         <h3>🎯 How to Win</h3>
-        <p>• Row to the shore before the goblin catches you</p>
+        <p>• Row with arrow keys or mouse/trackpad</p>
+        <p>• Reach the shore before the goblin catches you</p>
         <p>• The goblin runs 4× faster than you row</p>
         <p>• Use spiral patterns to confuse the goblin</p>
-        <p>• Time your escape carefully!</p>
+        <p>• Press H to toggle helper guide</p>
     </div>
 
     <script>
@@ -276,7 +277,10 @@
             up: false,
             down: false,
             left: false,
-            right: false
+            right: false,
+            mouseActive: false,
+            mouseX: 0,
+            mouseY: 0
         };
 
         // ===== INPUT HANDLING =====
@@ -294,6 +298,25 @@
             if (e.key === 'ArrowDown') keys.down = false;
             if (e.key === 'ArrowLeft') keys.left = false;
             if (e.key === 'ArrowRight') keys.right = false;
+        });
+
+        // Mouse/trackpad controls
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            keys.mouseX = (e.clientX - rect.left) * (canvas.width / rect.width) / dpr;
+            keys.mouseY = (e.clientY - rect.top) * (canvas.height / rect.height) / dpr;
+            keys.mouseActive = true;
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            keys.mouseActive = false;
+        });
+
+        // Disable mouse control when using keyboard
+        document.addEventListener('keydown', (e) => {
+            if (e.key.startsWith('Arrow')) {
+                keys.mouseActive = false;
+            }
         });
 
         document.getElementById('restartBtn').addEventListener('click', restart);
@@ -341,42 +364,50 @@
             player.bobPhase += dt * 3;
             goblin.bobPhase += dt * 5;
 
-            // Player movement with inertia
-            let ax = 0, ay = 0;
-            if (keys.up) ay -= 1;
-            if (keys.down) ay += 1;
-            if (keys.left) ax -= 1;
-            if (keys.right) ax += 1;
+            // Player movement - instant response (no inertia)
+            let dx = 0, dy = 0;
 
-            // Normalize acceleration direction
-            const accelLen = length(ax, ay);
-            if (accelLen > 0) {
-                ax = (ax / accelLen) * PLAYER_ACCEL * dt;
-                ay = (ay / accelLen) * PLAYER_ACCEL * dt;
+            // Keyboard controls
+            if (keys.up) dy -= 1;
+            if (keys.down) dy += 1;
+            if (keys.left) dx -= 1;
+            if (keys.right) dx += 1;
+
+            // Mouse/trackpad controls
+            if (keys.mouseActive) {
+                const centerX = canvas.width / (2 * dpr);
+                const centerY = canvas.height / (2 * dpr);
+                const targetX = keys.mouseX - centerX;
+                const targetY = keys.mouseY - centerY;
+                const distToTarget = length(targetX - player.x, targetY - player.y);
+
+                if (distToTarget > 5) {
+                    const norm = normalize(targetX - player.x, targetY - player.y);
+                    dx = norm.x;
+                    dy = norm.y;
+                }
             }
 
-            // Apply acceleration
-            player.vx += ax;
-            player.vy += ay;
+            // Normalize direction
+            const dirLen = length(dx, dy);
+            if (dirLen > 0) {
+                dx = (dx / dirLen) * PLAYER_MAX_SPEED * dt;
+                dy = (dy / dirLen) * PLAYER_MAX_SPEED * dt;
 
-            // Apply drag
-            player.vx *= PLAYER_DRAG;
-            player.vy *= PLAYER_DRAG;
+                // Update velocity for direction tracking
+                player.vx = dx / dt;
+                player.vy = dy / dt;
 
-            // Clamp speed
-            const speed = length(player.vx, player.vy);
-            if (speed > PLAYER_MAX_SPEED) {
-                player.vx = (player.vx / speed) * PLAYER_MAX_SPEED;
-                player.vy = (player.vy / speed) * PLAYER_MAX_SPEED;
-            }
+                // Update position
+                player.x += dx;
+                player.y += dy;
 
-            // Update position
-            player.x += player.vx * dt;
-            player.y += player.vy * dt;
-
-            // Update boat angle (direction of movement)
-            if (speed > 5) {
-                player.angle = Math.atan2(player.vy, player.vx);
+                // Update boat angle (direction of movement)
+                player.angle = Math.atan2(dy, dx);
+            } else {
+                // No movement
+                player.vx = 0;
+                player.vy = 0;
             }
 
             // Goblin AI
