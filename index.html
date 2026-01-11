@@ -334,6 +334,7 @@
         let helperEnabled = false; // Helper path toggle
         let aiControlEnabled = false; // AI autopilot toggle
         let aiState = 'approach'; // AI state machine: 'approach' | 'orbit' | 'dash'
+        let aiOrbitTime = 0; // Time spent orbiting (must orbit before dashing)
 
         // Player
         const player = {
@@ -451,6 +452,7 @@
             keys.left = false;
             keys.right = false;
             aiState = 'approach'; // Reset AI state
+            aiOrbitTime = 0; // Reset orbit timer
             document.getElementById('gameOver').classList.remove('show');
             lastTime = performance.now();
         }
@@ -475,14 +477,15 @@
                 const thetaG = goblin.theta; // goblin angle
                 const thetaOpp = wrapAngle(thetaG + Math.PI); // opposite angle
                 const safeRadius = getSafeRadius();
-                const RING_TOLERANCE = 20; // Wider tolerance for stability
+                const RING_TOLERANCE = 20;
 
                 // STEP 1: Handle center position (rb very small)
                 if (rb < 10) {
                     // At or near center - move directly toward opposite of goblin
                     dx = Math.cos(thetaOpp);
                     dy = Math.sin(thetaOpp);
-                    aiState = 'approach'; // Set state for next frame
+                    aiState = 'approach';
+                    aiOrbitTime = 0; // Not orbiting yet
                 }
                 // STEP 2: Check if currently dashing - if so, just keep going!
                 else if (aiState === 'dash') {
@@ -490,31 +493,17 @@
                     const angle = Math.atan2(player.y, player.x);
                     dx = Math.cos(angle);
                     dy = Math.sin(angle);
+                    aiOrbitTime = 0; // Reset orbit time
                 }
                 // STEP 3: Not dashing yet - evaluate whether we should
                 else {
                     const thetaB = Math.atan2(player.y, player.x);
                     const angularError = Math.abs(shortestAngularDiff(thetaB, thetaOpp));
 
-                    // Are we well-aligned with the escape direction?
-                    const isAligned = angularError <= 0.15; // ~8.6 degrees
-
-                    // Are we at or beyond the safe radius? (not too close to center)
-                    const atSafeRadius = rb >= safeRadius * 0.9; // Must be at least 90% of safe radius
-
-                    // Are we in the ring zone?
-                    const inRingZone = rb >= safeRadius - RING_TOLERANCE && rb <= safeRadius + RING_TOLERANCE;
-
-                    // ONLY dash if: at safe radius AND aligned AND either in orbit state or in ring zone
-                    if (isAligned && atSafeRadius && (aiState === 'orbit' || inRingZone)) {
-                        aiState = 'dash';
-                        const angle = Math.atan2(player.y, player.x);
-                        dx = Math.cos(angle);
-                        dy = Math.sin(angle);
-                    }
                     // Too far out - move inward toward the ring
-                    else if (rb > safeRadius + RING_TOLERANCE) {
+                    if (rb > safeRadius + RING_TOLERANCE) {
                         aiState = 'approach';
+                        aiOrbitTime = 0;
                         const angle = Math.atan2(player.y, player.x);
                         dx = -Math.cos(angle);
                         dy = -Math.sin(angle);
@@ -522,29 +511,47 @@
                     // Too close - move outward to the ring
                     else if (rb < safeRadius - RING_TOLERANCE) {
                         aiState = 'approach';
+                        aiOrbitTime = 0;
                         const angle = Math.atan2(player.y, player.x);
                         dx = Math.cos(angle);
                         dy = Math.sin(angle);
                     }
-                    // In the ring zone but not aligned - orbit!
+                    // In the ring zone - orbit or dash
                     else {
-                        aiState = 'orbit';
+                        // We're in the ring zone - we should be orbiting
+                        if (aiState !== 'orbit') {
+                            aiState = 'orbit';
+                            aiOrbitTime = 0; // Just entered orbit
+                        } else {
+                            aiOrbitTime += dt; // Accumulate orbit time
+                        }
 
-                        // Calculate direction to orbit
-                        const angleDiff = shortestAngularDiff(thetaB, thetaOpp);
-                        const orbitDirection = angleDiff > 0 ? 1 : -1;
+                        // Check if we can dash: aligned + orbited for minimum time
+                        const isAligned = angularError <= 0.15; // ~8.6 degrees
+                        const hasOrbitedEnough = aiOrbitTime >= 0.5; // Must orbit for at least 0.5 seconds
 
-                        // Move tangentially (perpendicular to radius)
-                        const tangentAngle = thetaB + orbitDirection * Math.PI / 2;
-                        dx = Math.cos(tangentAngle);
-                        dy = Math.sin(tangentAngle);
+                        if (isAligned && hasOrbitedEnough) {
+                            // DASH!
+                            aiState = 'dash';
+                            const angle = Math.atan2(player.y, player.x);
+                            dx = Math.cos(angle);
+                            dy = Math.sin(angle);
+                        } else {
+                            // Keep orbiting
+                            const angleDiff = shortestAngularDiff(thetaB, thetaOpp);
+                            const orbitDirection = angleDiff > 0 ? 1 : -1;
 
-                        // Add small radial component to maintain ring position
-                        const targetRadius = safeRadius;
-                        const radiusError = rb - targetRadius;
-                        const angle = Math.atan2(player.y, player.x);
-                        dx -= Math.cos(angle) * radiusError * 0.05;
-                        dy -= Math.sin(angle) * radiusError * 0.05;
+                            // Move tangentially (perpendicular to radius)
+                            const tangentAngle = thetaB + orbitDirection * Math.PI / 2;
+                            dx = Math.cos(tangentAngle);
+                            dy = Math.sin(tangentAngle);
+
+                            // Add small radial component to maintain ring position
+                            const radiusError = rb - safeRadius;
+                            const angle = Math.atan2(player.y, player.x);
+                            dx -= Math.cos(angle) * radiusError * 0.05;
+                            dy -= Math.sin(angle) * radiusError * 0.05;
+                        }
                     }
                 }
             }
