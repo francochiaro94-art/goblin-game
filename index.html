@@ -648,75 +648,222 @@
         }
 
         function drawHelperPath() {
+            const RING_TOL = 10; // Tolerance for "on the ring"
+            const ALIGN_TOL = 0.20; // ~11 degrees angular alignment tolerance
+            const PREDICTION_TIME = 0.25; // seconds for prediction
+
             // Calculate current state
             const rb = length(player.x, player.y); // boat radius
             const thetaB = Math.atan2(player.y, player.x); // boat angle
             const thetaG = goblin.theta; // goblin angle
 
+            // Predicted boat angle for smoother guidance
+            const predX = player.x + player.vx * PREDICTION_TIME;
+            const predY = player.y + player.vy * PREDICTION_TIME;
+            const predictedAngle = Math.atan2(predY, predX);
+
             // Target opposite angle
             const thetaOpp = wrapAngle(thetaG + Math.PI);
 
-            // Helper path styling
-            ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([6, 8]);
+            // Angular error
+            const err = Math.abs(shortestAngularDiff(thetaB, thetaOpp));
 
-            // Goal A: Move to safe radius if outside
-            if (rb > SAFE_RADIUS) {
-                // Draw radial line from current position to safe radius
+            // Clip to lake circle for cleaner visuals
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(0, 0, LAKE_RADIUS, 0, Math.PI * 2);
+            ctx.clip();
+
+            let helperText = "";
+
+            // ===== PHASE DETECTION =====
+
+            // PHASE 1: Get to safe ring (too far out)
+            if (rb > SAFE_RADIUS + RING_TOL) {
+                helperText = "NEXT: Get inside the safe ring";
+
+                // Draw safe ring
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.4)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 8]);
+                ctx.beginPath();
+                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Draw radial line to safe ring
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)';
+                ctx.lineWidth = 3;
                 const norm = normalize(player.x, player.y);
                 const targetX = norm.x * SAFE_RADIUS;
                 const targetY = norm.y * SAFE_RADIUS;
-
                 ctx.beginPath();
                 ctx.moveTo(player.x, player.y);
                 ctx.lineTo(targetX, targetY);
                 ctx.stroke();
+
+                // Draw target point on ring
+                ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+                ctx.beginPath();
+                ctx.arc(targetX, targetY, 5, 0, Math.PI * 2);
+                ctx.fill();
             }
+            // PHASE 1b: Too close to center, move outward
+            else if (rb < SAFE_RADIUS - RING_TOL) {
+                helperText = "NEXT: Move out to the ring, then circle";
 
-            // Goal B: Draw arc to opposite position at safe radius
-            // Project current boat angle to safe radius
-            const currentAngle = rb < SAFE_RADIUS ? thetaB : thetaB;
-            const angleDiff = shortestAngularDiff(currentAngle, thetaOpp);
+                // Draw safe ring
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.4)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 8]);
+                ctx.beginPath();
+                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.stroke();
 
-            // Draw arc on safe radius circle
-            const startAngle = currentAngle;
-            const endAngle = thetaOpp;
+                // Draw radial line outward
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)';
+                ctx.lineWidth = 3;
+                const angle = length(player.vx, player.vy) > 5 ? Math.atan2(player.vy, player.vx) : thetaB;
+                const targetX = Math.cos(angle) * SAFE_RADIUS;
+                const targetY = Math.sin(angle) * SAFE_RADIUS;
+                ctx.beginPath();
+                ctx.moveTo(player.x, player.y);
+                ctx.lineTo(targetX, targetY);
+                ctx.stroke();
 
-            // Draw the arc in the shorter direction
-            ctx.beginPath();
-            if (angleDiff > 0) {
-                // Counter-clockwise
-                ctx.arc(0, 0, SAFE_RADIUS, startAngle, endAngle, false);
-            } else {
-                // Clockwise
-                ctx.arc(0, 0, SAFE_RADIUS, startAngle, endAngle, false);
+                // Draw target point on ring
+                ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+                ctx.beginPath();
+                ctx.arc(targetX, targetY, 5, 0, Math.PI * 2);
+                ctx.fill();
             }
-            ctx.stroke();
+            // PHASE 3: Dash to shore (aligned and on ring)
+            else if (err <= ALIGN_TOL) {
+                helperText = "NEXT: Sprint straight out to the shore NOW!";
 
-            // Goal C: Draw escape line to shore when nearly opposite
-            if (Math.abs(angleDiff) < 0.15) {
+                // Draw safe ring (faded)
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.2)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([6, 8]);
+                ctx.beginPath();
+                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Draw escape line (bright green, thicker)
                 const escapeStartX = Math.cos(thetaOpp) * SAFE_RADIUS;
                 const escapeStartY = Math.sin(thetaOpp) * SAFE_RADIUS;
                 const escapeEndX = Math.cos(thetaOpp) * LAKE_RADIUS;
                 const escapeEndY = Math.sin(thetaOpp) * LAKE_RADIUS;
 
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
+                ctx.strokeStyle = 'rgba(0, 255, 0, 0.9)';
+                ctx.lineWidth = 4;
+                ctx.setLineDash([8, 6]);
                 ctx.beginPath();
                 ctx.moveTo(escapeStartX, escapeStartY);
                 ctx.lineTo(escapeEndX, escapeEndY);
                 ctx.stroke();
+
+                // Draw EXIT marker on shore
+                ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('EXIT', escapeEndX, escapeEndY);
+
+                // Draw pulsing target dot
+                const pulse = Math.sin(performance.now() / 200) * 0.3 + 0.7;
+                ctx.fillStyle = `rgba(0, 255, 0, ${pulse})`;
+                ctx.beginPath();
+                ctx.arc(escapeEndX, escapeEndY, 8, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            // PHASE 2: Orbit to opposite goblin (on ring but not aligned)
+            else {
+                helperText = "NEXT: Circle on the ring until you're opposite the goblin";
+
+                // Draw safe ring (prominent)
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 8]);
+                ctx.beginPath();
+                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Draw arc with clear direction
+                const angleDiff = shortestAngularDiff(predictedAngle, thetaOpp);
+                const arcDirection = angleDiff > 0; // true = counter-clockwise
+
+                ctx.strokeStyle = 'rgba(255, 200, 0, 0.8)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, SAFE_RADIUS, predictedAngle, thetaOpp, !arcDirection);
+                ctx.stroke();
+
+                // Draw directional arrows along the arc
+                const numArrows = 3;
+                for (let i = 1; i <= numArrows; i++) {
+                    const t = i / (numArrows + 1);
+                    const arcAngle = predictedAngle + angleDiff * t;
+                    const arrowX = Math.cos(arcAngle) * SAFE_RADIUS;
+                    const arrowY = Math.sin(arcAngle) * SAFE_RADIUS;
+
+                    // Draw small arrow
+                    const arrowSize = 8;
+                    const tangentAngle = arcAngle + (arcDirection ? Math.PI / 2 : -Math.PI / 2);
+
+                    ctx.fillStyle = 'rgba(255, 200, 0, 0.8)';
+                    ctx.beginPath();
+                    ctx.moveTo(
+                        arrowX + Math.cos(tangentAngle) * arrowSize,
+                        arrowY + Math.sin(tangentAngle) * arrowSize
+                    );
+                    ctx.lineTo(
+                        arrowX + Math.cos(tangentAngle + 2.5) * arrowSize * 0.5,
+                        arrowY + Math.sin(tangentAngle + 2.5) * arrowSize * 0.5
+                    );
+                    ctx.lineTo(
+                        arrowX + Math.cos(tangentAngle - 2.5) * arrowSize * 0.5,
+                        arrowY + Math.sin(tangentAngle - 2.5) * arrowSize * 0.5
+                    );
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                // Draw pulsing target dot at opposite point
+                const targetX = Math.cos(thetaOpp) * SAFE_RADIUS;
+                const targetY = Math.sin(thetaOpp) * SAFE_RADIUS;
+                const pulse = Math.sin(performance.now() / 200) * 0.3 + 0.7;
+
+                ctx.fillStyle = `rgba(255, 255, 0, ${pulse})`;
+                ctx.beginPath();
+                ctx.arc(targetX, targetY, 6, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(targetX, targetY, 10, 0, Math.PI * 2);
+                ctx.stroke();
             }
 
-            // Draw safe radius circle for reference
-            ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
-            ctx.stroke();
-
-            // Reset line dash
             ctx.setLineDash([]);
+            ctx.restore();
+
+            // Draw helper text label (outside clip, in screen coordinates)
+            if (helperText) {
+                ctx.save();
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(-150, -LAKE_RADIUS - 50, 300, 40);
+
+                ctx.fillStyle = '#ffeb3b';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+                ctx.shadowBlur = 4;
+                ctx.fillText(helperText, 0, -LAKE_RADIUS - 30);
+                ctx.shadowBlur = 0;
+                ctx.restore();
+            }
         }
 
         function showGameOver(won) {
