@@ -5,6 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>The Goblin in the Lake</title>
     <style>
+        :root {
+            --forest-dark: #1a3a2e;
+            --forest-base: #2d5a3d;
+            --forest-moss: #4a7c59;
+            --forest-light: #6b9677;
+            --bark-dark: #4a3728;
+            --bark-base: #6b523a;
+            --parchment: #f4e8d4;
+            --parchment-dark: #d4c4a8;
+            --gold: #daa520;
+            --gold-light: #f4d03f;
+            --success: #5b9a68;
+            --danger: #c44536;
+            --water-deep: #2b6a8f;
+            --water-light: #4a9ac9;
+            --shadow: rgba(0, 0, 0, 0.3);
+            --highlight: rgba(255, 255, 255, 0.15);
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,245 +31,684 @@
         }
 
         body {
-            font-family: 'Arial', sans-serif;
-            background: linear-gradient(135deg, #1a4d2e 0%, #0f2a1a 100%);
+            font-family: 'Georgia', 'Palatino', serif;
+            background: linear-gradient(180deg, var(--forest-dark) 0%, var(--forest-base) 40%, var(--forest-moss) 100%);
             overflow: hidden;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 20%, rgba(0,0,0,0.3) 100%);
+            pointer-events: none;
+        }
+
+        #appShell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            gap: 24px;
+        }
+
+        #gameStage {
+            position: relative;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             align-items: center;
-            min-height: 100vh;
+            gap: 12px;
+        }
+
+        .canvas-frame {
+            position: relative;
+            padding: 16px;
+            background: linear-gradient(145deg, var(--bark-dark), var(--bark-base));
+            border: 4px solid var(--bark-dark);
+            border-radius: 12px;
+            box-shadow:
+                0 8px 24px var(--shadow),
+                inset 0 2px 4px var(--highlight),
+                inset 0 -2px 4px rgba(0,0,0,0.2);
+        }
+
+        .canvas-frame::before {
+            content: '';
+            position: absolute;
+            inset: 8px;
+            border: 2px solid rgba(139, 90, 43, 0.3);
+            border-radius: 6px;
+            pointer-events: none;
         }
 
         #gameCanvas {
-            background: #0f2a1a;
-            border: 3px solid #2d5a3d;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+            display: block;
+            background: var(--forest-dark);
+            border: 2px solid var(--bark-dark);
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
             cursor: crosshair;
         }
 
-        #ui {
+        #hudOverlay {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            color: #e8f5e9;
-            font-size: 18px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-            z-index: 10;
+            top: 0;
+            left: 0;
+            right: 0;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .hud-plaque {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: linear-gradient(180deg, var(--bark-base), var(--bark-dark));
+            border: 3px solid var(--bark-dark);
+            border-radius: 0 0 12px 12px;
+            box-shadow:
+                0 4px 8px var(--shadow),
+                inset 0 1px 2px var(--highlight);
+            margin: 0 16px;
         }
 
         #timer {
             font-size: 32px;
             font-weight: bold;
-            color: #ffeb3b;
-            margin-bottom: 10px;
+            color: var(--gold-light);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8), 0 0 8px rgba(218, 165, 32, 0.3);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 2px;
         }
 
         #hints {
+            font-size: 13px;
+            color: var(--parchment);
+            opacity: 0.9;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .status-charms {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            pointer-events: none;
+            z-index: 6;
+        }
+
+        .charm {
+            padding: 6px 12px;
+            background: linear-gradient(135deg, var(--parchment), var(--parchment-dark));
+            border: 2px solid var(--bark-base);
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: bold;
+            color: var(--bark-dark);
+            box-shadow: 0 2px 4px var(--shadow);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.3s ease;
+        }
+
+        .charm.active {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .charm.helper { border-color: var(--success); color: var(--success); }
+        .charm.ai { border-color: var(--gold); color: var(--gold); }
+        .charm.speed { border-color: var(--water-deep); color: var(--water-deep); }
+
+        #controlDock {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            max-width: 320px;
+            width: 100%;
+        }
+
+        .control-card {
+            background: linear-gradient(135deg, var(--parchment), var(--parchment-dark));
+            border: 3px solid var(--bark-base);
+            border-radius: 12px;
+            padding: 16px;
+            box-shadow:
+                0 4px 12px var(--shadow),
+                inset 0 1px 2px rgba(255, 255, 255, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .control-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, var(--bark-base), transparent);
+        }
+
+        .card-header {
+            font-size: 16px;
+            font-weight: bold;
+            color: var(--bark-dark);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .card-header::before {
+            content: '⚙';
+            font-size: 18px;
+            opacity: 0.6;
+        }
+
+        .card-header.tools::before { content: '🛠'; }
+        .card-header.guide::before { content: '📜'; }
+
+        .btn-toggle {
+            width: 100%;
+            padding: 12px 20px;
             font-size: 14px;
-            opacity: 0.8;
+            font-weight: bold;
+            background: linear-gradient(180deg, var(--bark-base), var(--bark-dark));
+            color: var(--parchment);
+            border: 3px solid var(--bark-dark);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 0 var(--bark-dark), 0 4px 8px var(--shadow);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+        }
+
+        .btn-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 var(--bark-dark), 0 6px 12px var(--shadow);
+        }
+
+        .btn-toggle:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 var(--bark-dark), 0 2px 4px var(--shadow);
+        }
+
+        .btn-toggle.active {
+            background: linear-gradient(180deg, var(--success), #3a7a4a);
+            border-color: var(--success);
+            box-shadow:
+                0 4px 0 #2d5a38,
+                0 4px 8px var(--shadow),
+                0 0 12px rgba(91, 154, 104, 0.4);
+            color: #fff;
+        }
+
+        #helperBtn { margin-bottom: 8px; }
+
+        #aiBtn {
+            background: linear-gradient(180deg, var(--gold), #c9950d);
+            border-color: var(--gold);
+            box-shadow: 0 4px 0 #c9950d, 0 4px 8px var(--shadow);
+        }
+
+        #aiBtn:hover {
+            box-shadow: 0 6px 0 #c9950d, 0 6px 12px var(--shadow);
+        }
+
+        #aiBtn:active {
+            box-shadow: 0 2px 0 #c9950d, 0 2px 4px var(--shadow);
+        }
+
+        #aiBtn.active {
+            background: linear-gradient(180deg, var(--gold-light), var(--gold));
+            box-shadow:
+                0 4px 0 var(--gold),
+                0 4px 8px var(--shadow),
+                0 0 16px rgba(244, 208, 63, 0.5);
+        }
+
+        #speedControl {
+            padding: 0;
+            background: none;
+            border: none;
+            box-shadow: none;
+        }
+
+        .speed-inner {
+            padding: 16px;
+            background: linear-gradient(135deg, var(--parchment), var(--parchment-dark));
+            border: 3px solid var(--bark-base);
+            border-radius: 12px;
+            box-shadow:
+                0 4px 12px var(--shadow),
+                inset 0 1px 2px rgba(255, 255, 255, 0.3);
+        }
+
+        .speed-inner label {
+            display: block;
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--bark-dark);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #speedSlider {
+            width: 100%;
+            height: 8px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: linear-gradient(90deg, var(--bark-dark), var(--bark-base));
+            border-radius: 4px;
+            outline: none;
+            border: 2px solid var(--bark-dark);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        #speedSlider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, var(--gold-light), var(--gold));
+            border: 3px solid var(--bark-dark);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px var(--shadow);
+            transition: all 0.2s ease;
+        }
+
+        #speedSlider::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 3px 6px var(--shadow), 0 0 8px rgba(218, 165, 32, 0.4);
+        }
+
+        #speedSlider::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, var(--gold-light), var(--gold));
+            border: 3px solid var(--bark-dark);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 4px var(--shadow);
+            transition: all 0.2s ease;
+        }
+
+        #speedSlider::-moz-range-thumb:hover {
+            transform: scale(1.1);
+            box-shadow: 0 3px 6px var(--shadow), 0 0 8px rgba(218, 165, 32, 0.4);
+        }
+
+        #speedValue {
+            display: inline-block;
+            padding: 6px 12px;
+            background: linear-gradient(135deg, var(--water-deep), var(--water-light));
+            color: white;
+            font-weight: bold;
+            border-radius: 12px;
+            font-size: 14px;
+            margin-top: 8px;
+            box-shadow: 0 2px 4px var(--shadow);
+            border: 2px solid var(--bark-dark);
+        }
+
+        #questLog {
+            position: relative;
+        }
+
+        .quest-toggle {
+            width: 100%;
+            padding: 12px 16px;
+            background: linear-gradient(180deg, var(--bark-base), var(--bark-dark));
+            color: var(--parchment);
+            border: 3px solid var(--bark-dark);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 0 var(--bark-dark), 0 4px 8px var(--shadow);
+        }
+
+        .quest-toggle:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 var(--bark-dark), 0 6px 12px var(--shadow);
+        }
+
+        .quest-chevron {
+            transition: transform 0.3s ease;
+        }
+
+        .quest-toggle.open .quest-chevron {
+            transform: rotate(180deg);
+        }
+
+        #helpPanel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease, padding 0.3s ease;
+            background: var(--parchment);
+            border: none;
+            border-radius: 0 0 8px 8px;
+            margin-top: -3px;
+            border: 3px solid var(--bark-dark);
+            border-top: none;
+            box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #helpPanel.open {
+            max-height: 400px;
+            padding: 16px;
+        }
+
+        #helpPanel h3 {
+            margin-bottom: 12px;
+            color: var(--bark-dark);
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        #helpPanel p {
+            margin-bottom: 8px;
+            line-height: 1.6;
+            color: var(--bark-dark);
+            font-size: 13px;
         }
 
         #gameOver {
             position: absolute;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
-            padding: 40px 60px;
+            transform: translate(-50%, -50%) scale(0.8);
+            background: linear-gradient(135deg, var(--parchment) 0%, var(--parchment-dark) 100%);
+            padding: 40px 50px;
             border-radius: 16px;
             text-align: center;
-            color: #fff;
+            color: var(--bark-dark);
             display: none;
-            border: 3px solid #4caf50;
-            z-index: 20;
+            border: 4px solid var(--bark-dark);
+            box-shadow:
+                0 12px 32px rgba(0, 0, 0, 0.6),
+                inset 0 2px 4px rgba(255, 255, 255, 0.3);
+            z-index: 100;
+            max-width: 90%;
+            opacity: 0;
+            transition: all 0.3s ease;
         }
 
         #gameOver.show {
             display: block;
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        #gameOver::before {
+            content: '🔖';
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 40px;
+            filter: drop-shadow(0 4px 8px var(--shadow));
         }
 
         #gameOver.win {
-            border-color: #4caf50;
+            border-color: var(--success);
+            animation: victoryPulse 1s ease-in-out;
         }
 
         #gameOver.lose {
-            border-color: #f44336;
+            border-color: var(--danger);
+            animation: defeatShake 0.5s ease-in-out;
+        }
+
+        @keyframes victoryPulse {
+            0%, 100% { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6); }
+            50% { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6), 0 0 32px rgba(91, 154, 104, 0.6); }
+        }
+
+        @keyframes defeatShake {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            25% { transform: translate(-48%, -50%) scale(1); }
+            75% { transform: translate(-52%, -50%) scale(1); }
         }
 
         #gameOver h1 {
             font-size: 48px;
-            margin-bottom: 20px;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
         }
 
         #gameOver.win h1 {
-            color: #4caf50;
+            color: var(--success);
         }
 
         #gameOver.lose h1 {
-            color: #f44336;
+            color: var(--danger);
         }
 
         #gameOver p {
             font-size: 18px;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
+            color: var(--bark-dark);
+        }
+
+        .stats-row {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .stat-chip {
+            padding: 8px 16px;
+            background: linear-gradient(135deg, var(--bark-base), var(--bark-dark));
+            color: var(--parchment);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: bold;
+            border: 2px solid var(--bark-dark);
+            box-shadow: 0 2px 4px var(--shadow);
         }
 
         #restartBtn {
-            padding: 12px 32px;
+            padding: 14px 32px;
             font-size: 18px;
-            background: #4caf50;
-            color: white;
-            border: none;
+            font-weight: bold;
+            background: linear-gradient(180deg, var(--bark-base), var(--bark-dark));
+            color: var(--parchment);
+            border: 3px solid var(--bark-dark);
             border-radius: 8px;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 0 var(--bark-dark), 0 4px 8px var(--shadow);
+            text-transform: uppercase;
+            letter-spacing: 2px;
         }
 
         #restartBtn:hover {
-            background: #66bb6a;
-            transform: scale(1.05);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 var(--bark-dark), 0 6px 12px var(--shadow);
+            background: linear-gradient(180deg, #7d6342, var(--bark-dark));
         }
 
-        #helpPanel {
+        #restartBtn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 var(--bark-dark), 0 2px 4px var(--shadow);
+        }
+
+        @media (max-width: 900px) {
+            #appShell {
+                flex-direction: column;
+                padding: 12px;
+            }
+
+            #controlDock {
+                max-width: 100%;
+                width: 100%;
+            }
+
+            .canvas-frame {
+                padding: 12px;
+            }
+
+            #timer {
+                font-size: 24px;
+            }
+
+            #hints {
+                font-size: 11px;
+            }
+
+            .hud-plaque {
+                padding: 8px 12px;
+                margin: 0 8px;
+            }
+
+            .status-charms {
+                top: 60px;
+                right: 12px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        #ui {
+            display: none;
+        }
+
+        .victory-particles {
             position: absolute;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 15px;
-            border-radius: 8px;
-            color: #e8f5e9;
-            max-width: 300px;
-            font-size: 13px;
-            border: 2px solid #4caf50;
-            z-index: 10;
+            inset: 0;
+            pointer-events: none;
+            overflow: hidden;
+            z-index: 99;
         }
 
-        #helpPanel h3 {
-            margin-bottom: 8px;
-            color: #4caf50;
-        }
-
-        #helpPanel p {
-            margin-bottom: 6px;
-            line-height: 1.4;
-        }
-
-        #helperBtn {
+        .leaf {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            font-size: 14px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #4caf50;
-            border: 2px solid #4caf50;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            z-index: 10;
+            width: 8px;
+            height: 12px;
+            background: linear-gradient(135deg, var(--success), var(--forest-moss));
+            border-radius: 50% 0;
+            opacity: 0;
+            animation: leafFall 3s ease-in-out infinite;
         }
 
-        #helperBtn:hover {
-            background: rgba(76, 175, 80, 0.2);
+        @keyframes leafFall {
+            0% {
+                transform: translateY(-20px) rotate(0deg);
+                opacity: 0;
+            }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% {
+                transform: translateY(120vh) rotate(720deg);
+                opacity: 0;
+            }
         }
 
-        #helperBtn.active {
-            background: #4caf50;
-            color: white;
-        }
-
-        #speedControl {
-            position: absolute;
-            top: 70px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            padding: 12px 16px;
-            border-radius: 8px;
-            border: 2px solid #4caf50;
-            z-index: 10;
-            min-width: 200px;
-        }
-
-        #speedControl label {
-            display: block;
-            color: #4caf50;
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 8px;
-            text-align: center;
-        }
-
-        #speedSlider {
-            width: 100%;
-            cursor: pointer;
-            accent-color: #4caf50;
-        }
-
-        #speedValue {
-            display: block;
-            color: #e8f5e9;
-            font-size: 13px;
-            text-align: center;
-            margin-top: 6px;
-        }
-
-        #aiBtn {
-            position: absolute;
-            top: 160px;
-            right: 20px;
-            padding: 10px 20px;
-            font-size: 14px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #ff9800;
-            border: 2px solid #ff9800;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            z-index: 10;
-        }
-
-        #aiBtn:hover {
-            background: rgba(255, 152, 0, 0.2);
-        }
-
-        #aiBtn.active {
-            background: #ff9800;
-            color: white;
-        }
+        .leaf:nth-child(1) { left: 10%; animation-delay: 0s; }
+        .leaf:nth-child(2) { left: 20%; animation-delay: 0.3s; }
+        .leaf:nth-child(3) { left: 30%; animation-delay: 0.6s; }
+        .leaf:nth-child(4) { left: 40%; animation-delay: 0.9s; }
+        .leaf:nth-child(5) { left: 50%; animation-delay: 1.2s; }
+        .leaf:nth-child(6) { left: 60%; animation-delay: 1.5s; }
+        .leaf:nth-child(7) { left: 70%; animation-delay: 1.8s; }
+        .leaf:nth-child(8) { left: 80%; animation-delay: 2.1s; }
+        .leaf:nth-child(9) { left: 90%; animation-delay: 2.4s; }
     </style>
 </head>
 <body>
-    <div id="ui">
+    <div id="appShell">
+        <div id="gameStage">
+            <div class="canvas-frame">
+                <canvas id="gameCanvas"></canvas>
+                <div id="hudOverlay">
+                    <div class="hud-plaque">
+                        <div id="timer">0.0s</div>
+                        <div id="hints">Arrow keys or mouse • R restart • H helper</div>
+                    </div>
+                </div>
+                <div class="status-charms">
+                    <div class="charm helper" id="helperCharm">Helper</div>
+                    <div class="charm ai" id="aiCharm">AI Control</div>
+                    <div class="charm speed" id="speedCharm">4.0×</div>
+                </div>
+            </div>
+
+            <div id="gameOver">
+                <h1 id="resultText">You Win!</h1>
+                <p id="resultDetail">You escaped the goblin!</p>
+                <div class="stats-row" id="statsRow"></div>
+                <button id="restartBtn">Restart (R)</button>
+            </div>
+        </div>
+
+        <div id="controlDock">
+            <div class="control-card">
+                <div class="card-header tools">Tools</div>
+                <button id="helperBtn" class="btn-toggle">Helper: Off</button>
+                <button id="aiBtn" class="btn-toggle">AI Control: Off</button>
+            </div>
+
+            <div class="control-card" id="speedControl">
+                <div class="speed-inner">
+                    <label for="speedSlider">Goblin Speed</label>
+                    <input type="range" id="speedSlider" min="0.5" max="4.3" step="0.1" value="4.0">
+                    <span id="speedValue">4.0x faster</span>
+                </div>
+            </div>
+
+            <div class="control-card" id="questLog">
+                <button class="quest-toggle" id="questToggle">
+                    <span>Quest Log</span>
+                    <span class="quest-chevron">▼</span>
+                </button>
+                <div id="helpPanel">
+                    <h3>🎯 How to Win</h3>
+                    <p>• Row with arrow keys or mouse/trackpad</p>
+                    <p>• Reach the shore before the goblin catches you</p>
+                    <p>• Adjust goblin speed with the slider (0.5x-4.3x)</p>
+                    <p>• Press H to toggle helper guide</p>
+                    <p>• Enable AI Control to watch the optimal strategy</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ui" style="display: none;">
         <div id="timer">0.0s</div>
         <div id="hints">Arrow keys or mouse to row • R to restart • H for helper</div>
-    </div>
-
-    <button id="helperBtn">Helper: Off</button>
-
-    <div id="speedControl">
-        <label for="speedSlider">Goblin Speed</label>
-        <input type="range" id="speedSlider" min="0.5" max="4.3" step="0.1" value="4.0">
-        <span id="speedValue">4.0x faster</span>
-    </div>
-
-    <button id="aiBtn">AI Control: Off</button>
-
-    <canvas id="gameCanvas"></canvas>
-
-    <div id="gameOver">
-        <h1 id="resultText">You Win!</h1>
-        <p id="resultDetail">You escaped the goblin!</p>
-        <button id="restartBtn">Restart (R)</button>
-    </div>
-
-    <div id="helpPanel">
-        <h3>🎯 How to Win</h3>
-        <p>• Row with arrow keys or mouse/trackpad</p>
-        <p>• Reach the shore before the goblin catches you</p>
-        <p>• Adjust goblin speed with the slider (0.5x-4.3x)</p>
-        <p>• Press H to toggle helper guide</p>
-        <p>• Enable AI Control to watch the optimal strategy</p>
     </div>
 
     <script>
@@ -274,27 +732,25 @@
         const LAKE_RADIUS = Math.min(canvas.width, canvas.height) / (2 * dpr) * 0.38;
         const PLAYER_RADIUS = 8;
         const GOBLIN_RADIUS = 10;
-        const PLAYER_MAX_SPEED = 120; // px/s
-        const PLAYER_ACCEL = 400; // px/s^2 (increased for better responsiveness)
-        const PLAYER_DRAG = 0.98; // per frame (multiplier) - much gentler drag
-        const CATCH_ARC_THRESHOLD = 22; // px arc distance for catching
-        const PREDICTION_HORIZON = 0.35; // seconds
-        const MAX_DT = 0.05; // clamp frame time spikes
+        const PLAYER_MAX_SPEED = 120;
+        const PLAYER_ACCEL = 400;
+        const PLAYER_DRAG = 0.98;
+        const CATCH_ARC_THRESHOLD = 22;
+        const PREDICTION_HORIZON = 0.35;
+        const MAX_DT = 0.05;
 
-        // Speed ratio (adjustable via slider)
-        let speedRatio = 4.0; // k (goblin speed multiplier)
+        let speedRatio = 4.0;
 
-        // Helper functions to calculate dynamic values
         function getGoblinSpeed() {
             return PLAYER_MAX_SPEED * speedRatio;
         }
 
         function getCriticalRadius() {
-            return LAKE_RADIUS / speedRatio; // r* = R/k
+            return LAKE_RADIUS / speedRatio;
         }
 
         function getSafeRadius() {
-            return getCriticalRadius() * 0.95; // rSafe (with safety margin)
+            return getCriticalRadius() * 0.95;
         }
 
         // ===== HELPER FUNCTIONS =====
@@ -328,33 +784,30 @@
         }
 
         // ===== GAME STATE =====
-        let gameState = 'playing'; // 'playing' | 'won' | 'lost'
+        let gameState = 'playing';
         let timer = 0;
         let lastTime = performance.now();
-        let helperEnabled = false; // Helper path toggle
-        let aiControlEnabled = false; // AI autopilot toggle
-        let aiState = 'spin'; // AI state machine: 'spin' | 'orbit' | 'dash'
-        let aiDashAngle = 0; // committed escape angle (thetaOpp at commit)
-        let aiAlignedTime = 0; // time spent aligned (prevents flicker/indecision)
-        let aiLastThetaB = 0; // last known boat angle (helps at center)
+        let helperEnabled = false;
+        let aiControlEnabled = false;
+        let aiState = 'spin';
+        let aiDashAngle = 0;
+        let aiAlignedTime = 0;
+        let aiLastThetaB = 0;
 
-        // Player
         const player = {
             x: 0,
             y: 0,
             vx: 0,
             vy: 0,
-            angle: 0, // for rendering boat direction
+            angle: 0,
             bobPhase: 0
         };
 
-        // Goblin
         const goblin = {
-            theta: Math.random() * Math.PI * 2, // angle on circle
+            theta: Math.random() * Math.PI * 2,
             bobPhase: 0
         };
 
-        // Input
         const keys = {
             up: false,
             down: false,
@@ -382,7 +835,6 @@
             if (e.key === 'ArrowRight') keys.right = false;
         });
 
-        // Mouse/trackpad controls
         canvas.addEventListener('mousemove', (e) => {
             const rect = canvas.getBoundingClientRect();
             keys.mouseX = (e.clientX - rect.left) * (canvas.width / rect.width) / dpr;
@@ -394,7 +846,6 @@
             keys.mouseActive = false;
         });
 
-        // Disable mouse control when using keyboard
         document.addEventListener('keydown', (e) => {
             if (e.key.startsWith('Arrow')) {
                 keys.mouseActive = false;
@@ -405,13 +856,20 @@
         document.getElementById('helperBtn').addEventListener('click', toggleHelper);
         document.getElementById('aiBtn').addEventListener('click', toggleAI);
 
-        // Speed slider control
         const speedSlider = document.getElementById('speedSlider');
         const speedValue = document.getElementById('speedValue');
 
         speedSlider.addEventListener('input', (e) => {
             speedRatio = parseFloat(e.target.value);
             speedValue.textContent = speedRatio.toFixed(1) + 'x faster';
+            updateSpeedCharm();
+        });
+
+        document.getElementById('questToggle').addEventListener('click', () => {
+            const panel = document.getElementById('helpPanel');
+            const toggle = document.getElementById('questToggle');
+            panel.classList.toggle('open');
+            toggle.classList.toggle('open');
         });
 
         function toggleHelper() {
@@ -424,6 +882,7 @@
                 helperBtn.textContent = 'Helper: Off';
                 helperBtn.classList.remove('active');
             }
+            updateHelperCharm();
         }
 
         function toggleAI() {
@@ -436,6 +895,31 @@
                 aiBtn.textContent = 'AI Control: Off';
                 aiBtn.classList.remove('active');
             }
+            updateAICharm();
+        }
+
+        function updateHelperCharm() {
+            const charm = document.getElementById('helperCharm');
+            if (helperEnabled) {
+                charm.classList.add('active');
+            } else {
+                charm.classList.remove('active');
+            }
+        }
+
+        function updateAICharm() {
+            const charm = document.getElementById('aiCharm');
+            if (aiControlEnabled) {
+                charm.classList.add('active');
+            } else {
+                charm.classList.remove('active');
+            }
+        }
+
+        function updateSpeedCharm() {
+            const charm = document.getElementById('speedCharm');
+            charm.textContent = speedRatio.toFixed(1) + '×';
+            charm.classList.add('active');
         }
 
         function restart() {
@@ -453,11 +937,13 @@
             keys.down = false;
             keys.left = false;
             keys.right = false;
-            aiState = 'spin'; // Start with spin/orbit, NOT approach
+            aiState = 'spin';
             aiDashAngle = 0;
             aiAlignedTime = 0;
             aiLastThetaB = 0;
             document.getElementById('gameOver').classList.remove('show');
+            const particles = document.querySelector('.victory-particles');
+            if (particles) particles.remove();
             lastTime = performance.now();
         }
 
@@ -465,36 +951,25 @@
         function update(dt) {
             if (gameState !== 'playing') return;
 
-            // Update timer
             timer += dt;
 
-            // Update bob phases
             player.bobPhase += dt * 3;
             goblin.bobPhase += dt * 5;
 
-            // Player movement - instant response (no inertia)
             let dx = 0, dy = 0;
 
-            // AI Control (optimal strategy)
             if (aiControlEnabled) {
                 const rb = length(player.x, player.y);
-
-                // Goblin current angle and the "opposite" angle we want to be at
                 const thetaG = goblin.theta;
                 const thetaOpp = wrapAngle(thetaG + Math.PI);
-
-                // Dynamic radii based on slider
-                const safeRadius = getSafeRadius();          // ~0.95 * (R/k)
-                const criticalRadius = getCriticalRadius();  // R/k
-
-                // Tunables (work well with your speeds)
-                const RING_TOL = 16;               // px tolerance around safeRadius
-                const ALIGN_TOL = 0.15;            // rad (~8.6°)
-                const ALIGN_HOLD = 0.35;           // seconds aligned before committing dash
+                const safeRadius = getSafeRadius();
+                const criticalRadius = getCriticalRadius();
+                const RING_TOL = 16;
+                const ALIGN_TOL = 0.15;
+                const ALIGN_HOLD = 0.35;
                 const SPIN_RADIUS = Math.max(14, Math.min(criticalRadius * 0.75, safeRadius * 0.75));
                 const CENTER_EPS = 6;
 
-                // Boat angle: at center it's undefined, so use last or velocity direction
                 let thetaB;
                 if (rb > CENTER_EPS) {
                     thetaB = Math.atan2(player.y, player.x);
@@ -503,35 +978,23 @@
                     thetaB = Math.atan2(player.vy, player.vx);
                     aiLastThetaB = thetaB;
                 } else {
-                    thetaB = aiLastThetaB; // stable fallback
+                    thetaB = aiLastThetaB;
                 }
 
-                // Signed shortest diff from boat angle to opposite
                 const diffToOpp = shortestAngularDiff(thetaB, thetaOpp);
                 const absDiffToOpp = Math.abs(diffToOpp);
-
-                // Helper: tangential direction that reduces the angular error
-                // If diffToOpp > 0, we need to increase thetaB (CCW) => tangent = +90°
-                // If diffToOpp < 0, decrease thetaB (CW) => tangent = -90°
                 const orbitDir = diffToOpp > 0 ? 1 : -1;
                 const tangentAngle = thetaB + orbitDir * Math.PI / 2;
 
-                // Radial control to keep us near a target radius
                 function radialCorrection(targetR, gain) {
                     const rErr = rb - targetR;
                     if (rb < 1e-6) return { rx: 0, ry: 0 };
                     const ux = player.x / rb;
                     const uy = player.y / rb;
-                    // If rErr > 0, we are outside -> push inward (-u)
                     return { rx: -ux * rErr * gain, ry: -uy * rErr * gain };
                 }
 
-                // ===== STATE MACHINE =====
-                // spin  -> build angular advantage inside critical radius (no suicidal dash)
-                // orbit -> maintain safe ring and keep getting opposite
-                // dash  -> committed straight-out escape along stored aiDashAngle
                 if (aiState !== 'dash') {
-                    // Update alignment timer
                     if (absDiffToOpp <= ALIGN_TOL && Math.abs(rb - safeRadius) <= RING_TOL) {
                         aiAlignedTime += dt;
                     } else {
@@ -539,61 +1002,43 @@
                     }
                 }
 
-                // 1) DASH (committed)
                 if (aiState === 'dash') {
                     dx = Math.cos(aiDashAngle);
                     dy = Math.sin(aiDashAngle);
-                }
-                // 2) SPIN: get off center + start orbiting inside critical radius to gain angle
-                else if (aiState === 'spin') {
-                    // If we're near center, move tangentially relative to goblin to start rotating fast
-                    // Use a stable tangent based on goblin angle (NOT boat angle, since boat angle may be unstable at center)
+                } else if (aiState === 'spin') {
                     let baseAngle = (rb > CENTER_EPS) ? thetaB : thetaG;
-                    let spinTangent = baseAngle + Math.PI / 2; // CCW default
-                    // Choose spin direction that moves toward thetaOpp quicker once we have an angle
-                    // (If diffToOpp negative, prefer CW)
+                    let spinTangent = baseAngle + Math.PI / 2;
                     if (rb > CENTER_EPS && diffToOpp < 0) spinTangent = baseAngle - Math.PI / 2;
 
-                    // Tangential motion + gentle outward push to reach SPIN_RADIUS
                     const out = radialCorrection(SPIN_RADIUS, 0.06);
                     dx = Math.cos(spinTangent) + out.rx;
                     dy = Math.sin(spinTangent) + out.ry;
 
-                    // Transition to orbit once we reached spin radius
                     if (rb >= SPIN_RADIUS - 4) {
                         aiState = 'orbit';
                     }
-                }
-                // 3) ORBIT: live on/near safe ring and keep moving to opposite; commit dash when stable
-                else { // aiState === 'orbit'
-                    // If aligned long enough, COMMIT dash now
+                } else {
                     if (aiAlignedTime >= ALIGN_HOLD) {
                         aiState = 'dash';
-                        aiDashAngle = thetaOpp; // store the escape line now
+                        aiDashAngle = thetaOpp;
                         dx = Math.cos(aiDashAngle);
                         dy = Math.sin(aiDashAngle);
                     } else {
-                        // Orbit tangentially to reduce angular error
                         const rad = radialCorrection(safeRadius, 0.05);
                         dx = Math.cos(tangentAngle) + rad.rx;
                         dy = Math.sin(tangentAngle) + rad.ry;
 
-                        // If we drift way off the ring (e.g., from earlier), return to spin mode to re-stabilize
                         if (rb > safeRadius + 2 * RING_TOL || rb < SPIN_RADIUS * 0.7) {
                             aiState = 'spin';
                         }
                     }
                 }
-            }
-            // Manual controls
-            else {
-                // Keyboard controls
+            } else {
                 if (keys.up) dy -= 1;
                 if (keys.down) dy += 1;
                 if (keys.left) dx -= 1;
                 if (keys.right) dx += 1;
 
-                // Mouse/trackpad controls
                 if (keys.mouseActive) {
                     const centerX = canvas.width / (2 * dpr);
                     const centerY = canvas.height / (2 * dpr);
@@ -609,45 +1054,33 @@
                 }
             }
 
-            // Normalize direction
             const dirLen = length(dx, dy);
             if (dirLen > 0) {
                 dx = (dx / dirLen) * PLAYER_MAX_SPEED * dt;
                 dy = (dy / dirLen) * PLAYER_MAX_SPEED * dt;
 
-                // Update velocity for direction tracking
                 player.vx = dx / dt;
                 player.vy = dy / dt;
 
-                // Update position
                 player.x += dx;
                 player.y += dy;
 
-                // Update boat angle (direction of movement)
                 player.angle = Math.atan2(dy, dx);
             } else {
-                // No movement
                 player.vx = 0;
                 player.vy = 0;
             }
 
-            // Goblin AI
             const playerAngle = Math.atan2(player.y, player.x);
-
-            // Predict player's future position
             const futureX = player.x + player.vx * PREDICTION_HORIZON;
             const futureY = player.y + player.vy * PREDICTION_HORIZON;
             const predictedAngle = Math.atan2(futureY, futureX);
-
-            // Blend current and predicted (smoother tracking)
             const targetAngle = wrapAngle(lerp(playerAngle, predictedAngle, 0.6));
 
-            // Compute shortest path to target
             const angleDiff = shortestAngularDiff(goblin.theta, targetAngle);
-            const goblinAngularSpeed = getGoblinSpeed() / LAKE_RADIUS; // radians per second
+            const goblinAngularSpeed = getGoblinSpeed() / LAKE_RADIUS;
             const maxMove = goblinAngularSpeed * dt;
 
-            // Move goblin (don't overshoot)
             if (Math.abs(angleDiff) < maxMove) {
                 goblin.theta = targetAngle;
             } else {
@@ -655,24 +1088,19 @@
             }
             goblin.theta = wrapAngle(goblin.theta);
 
-            // Check for landing (player reaching shore)
             const distFromCenter = length(player.x, player.y);
             if (distFromCenter >= LAKE_RADIUS - PLAYER_RADIUS) {
-                // Player has landed!
                 const landingAngle = Math.atan2(player.y, player.x);
                 const arcDist = LAKE_RADIUS * Math.abs(shortestAngularDiff(goblin.theta, landingAngle));
 
                 if (arcDist <= CATCH_ARC_THRESHOLD) {
-                    // Goblin caught the player
                     gameState = 'lost';
                     showGameOver(false);
                 } else {
-                    // Player escaped!
                     gameState = 'won';
                     showGameOver(true);
                 }
 
-                // Stop the player at shore
                 player.vx = 0;
                 player.vy = 0;
             }
@@ -683,110 +1111,113 @@
             const centerX = canvas.width / (2 * dpr);
             const centerY = canvas.height / (2 * dpr);
 
-            // Clear
             ctx.fillStyle = '#0f2a1a';
             ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
             ctx.save();
             ctx.translate(centerX, centerY);
 
-            // Draw background scenery (trees/rocks)
             drawScenery();
-
-            // Draw water (lake interior)
             drawLake();
 
-            // Draw shoreline
             ctx.strokeStyle = '#8d6e63';
             ctx.lineWidth = 4;
             ctx.beginPath();
             ctx.arc(0, 0, LAKE_RADIUS, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Draw shore sand
             ctx.strokeStyle = '#d7ccc8';
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.arc(0, 0, LAKE_RADIUS + 6, 0, Math.PI * 2);
             ctx.stroke();
 
-            // Draw goblin
-            drawGoblin();
+            ctx.strokeStyle = 'rgba(139, 90, 43, 0.4)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(0, 0, LAKE_RADIUS + 3, 0, Math.PI * 2);
+            ctx.stroke();
 
-            // Draw player boat
+            drawGoblin();
             drawBoat();
 
-            // Draw helper path
             if (helperEnabled && gameState === 'playing') {
                 drawHelperPath();
             }
 
-            // Draw debug line (player to goblin target)
-            if (gameState === 'playing') {
-                ctx.strokeStyle = 'rgba(255, 0, 0, 0.2)';
-                ctx.lineWidth = 1;
-                ctx.setLineDash([5, 5]);
-                ctx.beginPath();
-                const goblinX = Math.cos(goblin.theta) * LAKE_RADIUS;
-                const goblinY = Math.sin(goblin.theta) * LAKE_RADIUS;
-                ctx.moveTo(player.x, player.y);
-                ctx.lineTo(goblinX, goblinY);
-                ctx.stroke();
-                ctx.setLineDash([]);
-            }
-
             ctx.restore();
 
-            // Update timer display
             document.getElementById('timer').textContent = timer.toFixed(1) + 's';
         }
 
         function drawLake() {
-            // Water gradient
             const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, LAKE_RADIUS);
-            gradient.addColorStop(0, '#4dd0e1');
-            gradient.addColorStop(0.6, '#26c6da');
-            gradient.addColorStop(1, '#00acc1');
+            gradient.addColorStop(0, '#5fa3c9');
+            gradient.addColorStop(0.4, '#4a9ac9');
+            gradient.addColorStop(0.8, '#3a8ab9');
+            gradient.addColorStop(1, '#2b7aa9');
             ctx.fillStyle = gradient;
             ctx.beginPath();
             ctx.arc(0, 0, LAKE_RADIUS, 0, Math.PI * 2);
             ctx.fill();
 
-            // Water ripples
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
             ctx.lineWidth = 1;
-            for (let i = 0; i < 3; i++) {
-                const offset = (timer * 20 + i * 30) % 100;
+            for (let i = 0; i < 4; i++) {
+                const offset = (timer * 15 + i * 25) % 100;
                 ctx.beginPath();
-                ctx.arc(0, 0, LAKE_RADIUS * 0.3 + offset, 0, Math.PI * 2);
+                ctx.arc(0, 0, LAKE_RADIUS * 0.25 + offset, 0, Math.PI * 2);
                 ctx.stroke();
             }
+
+            ctx.save();
+            ctx.globalAlpha = 0.15;
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const dist = LAKE_RADIUS * 0.85 + Math.sin(timer * 2 + i) * 5;
+                const x = Math.cos(angle) * dist;
+                const y = Math.sin(angle) * dist;
+                ctx.fillStyle = '#2d7d52';
+                ctx.beginPath();
+                ctx.ellipse(x, y, 8, 6, angle, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
         }
 
         function drawScenery() {
-            // Trees around the lake
             for (let i = 0; i < 12; i++) {
                 const angle = (i / 12) * Math.PI * 2;
-                // Use deterministic offset based on tree index to prevent vibration
-                const randomOffset = ((i * 7919) % 100) / 5; // Pseudo-random but stable
+                const randomOffset = ((i * 7919) % 100) / 5;
                 const dist = LAKE_RADIUS + 30 + randomOffset;
                 const x = Math.cos(angle) * dist;
                 const y = Math.sin(angle) * dist;
+                const scale = 0.8 + ((i * 31) % 40) / 100;
 
-                // Tree trunk
+                ctx.save();
+                ctx.globalAlpha = 0.3;
+                ctx.fillStyle = '#1a3a2e';
+                ctx.beginPath();
+                ctx.ellipse(x, y + 8, 8 * scale, 3 * scale, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
                 ctx.fillStyle = '#5d4037';
-                ctx.fillRect(x - 3, y - 8, 6, 16);
+                ctx.fillRect(x - 3 * scale, y - 8 * scale, 6 * scale, 16 * scale);
 
-                // Tree foliage
-                ctx.fillStyle = '#2e7d32';
+                const gradient = ctx.createRadialGradient(x, y - 12 * scale, 0, x, y - 12 * scale, 10 * scale);
+                gradient.addColorStop(0, '#4a7c59');
+                gradient.addColorStop(0.7, '#3a6c49');
+                gradient.addColorStop(1, '#2a5c39');
+                ctx.fillStyle = gradient;
                 ctx.beginPath();
-                ctx.arc(x, y - 12, 10, 0, Math.PI * 2);
+                ctx.arc(x, y - 12 * scale, 10 * scale, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.beginPath();
-                ctx.arc(x - 5, y - 8, 8, 0, Math.PI * 2);
+                ctx.arc(x - 5 * scale, y - 8 * scale, 8 * scale, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.beginPath();
-                ctx.arc(x + 5, y - 8, 8, 0, Math.PI * 2);
+                ctx.arc(x + 5 * scale, y - 8 * scale, 8 * scale, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -796,11 +1227,17 @@
             ctx.translate(player.x, player.y);
             ctx.rotate(player.angle);
 
-            // Bobbing effect
             const bobOffset = Math.sin(player.bobPhase) * 1.5;
             ctx.translate(0, bobOffset);
 
-            // Boat hull
+            ctx.save();
+            ctx.globalAlpha = 0.2;
+            ctx.fillStyle = '#1a3a2e';
+            ctx.beginPath();
+            ctx.ellipse(2, 8, 12, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
             ctx.fillStyle = '#8d6e63';
             ctx.strokeStyle = '#5d4037';
             ctx.lineWidth = 2;
@@ -809,13 +1246,11 @@
             ctx.fill();
             ctx.stroke();
 
-            // Boat interior
             ctx.fillStyle = '#d7ccc8';
             ctx.beginPath();
             ctx.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // Player (simple circle)
             ctx.fillStyle = '#ffeb3b';
             ctx.strokeStyle = '#f57c00';
             ctx.lineWidth = 2;
@@ -834,16 +1269,25 @@
             ctx.save();
             ctx.translate(x, y);
 
-            // Face toward player
             const angleToPlayer = Math.atan2(player.y - y, player.x - x);
             ctx.rotate(angleToPlayer);
 
-            // Bobbing effect (faster than boat)
             const bobOffset = Math.sin(goblin.bobPhase) * 2;
             ctx.translate(0, bobOffset);
 
-            // Goblin body
-            ctx.fillStyle = '#4caf50';
+            ctx.save();
+            ctx.globalAlpha = 0.25;
+            ctx.fillStyle = '#1a3a2e';
+            ctx.beginPath();
+            ctx.ellipse(2, GOBLIN_RADIUS + 4, GOBLIN_RADIUS + 2, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+
+            const gradient = ctx.createRadialGradient(0, -2, 0, 0, 0, GOBLIN_RADIUS);
+            gradient.addColorStop(0, '#5fcc6f');
+            gradient.addColorStop(0.7, '#4caf50');
+            gradient.addColorStop(1, '#3a8f40');
+            ctx.fillStyle = gradient;
             ctx.strokeStyle = '#2e7d32';
             ctx.lineWidth = 2;
             ctx.beginPath();
@@ -851,48 +1295,52 @@
             ctx.fill();
             ctx.stroke();
 
-            // Goblin eyes (menacing)
             ctx.fillStyle = '#ff5722';
             ctx.beginPath();
             ctx.arc(-3, -2, 2, 0, Math.PI * 2);
             ctx.arc(3, -2, 2, 0, Math.PI * 2);
             ctx.fill();
 
-            // Goblin mouth (grin)
             ctx.strokeStyle = '#2e7d32';
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             ctx.arc(0, 1, 4, 0, Math.PI);
             ctx.stroke();
 
+            ctx.fillStyle = '#3a8f40';
+            ctx.beginPath();
+            ctx.moveTo(-5, -GOBLIN_RADIUS + 2);
+            ctx.lineTo(-8, -GOBLIN_RADIUS - 3);
+            ctx.lineTo(-4, -GOBLIN_RADIUS);
+            ctx.closePath();
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(5, -GOBLIN_RADIUS + 2);
+            ctx.lineTo(8, -GOBLIN_RADIUS - 3);
+            ctx.lineTo(4, -GOBLIN_RADIUS);
+            ctx.closePath();
+            ctx.fill();
+
             ctx.restore();
         }
 
         function drawHelperPath() {
-            const RING_TOL = 10; // Tolerance for "on the ring"
-            const ALIGN_TOL = 0.20; // ~11 degrees angular alignment tolerance
-            const PREDICTION_TIME = 0.25; // seconds for prediction
+            const RING_TOL = 10;
+            const ALIGN_TOL = 0.20;
+            const PREDICTION_TIME = 0.25;
 
-            // Get current safe radius (dynamic based on speed ratio)
             const safeRadius = getSafeRadius();
+            const rb = length(player.x, player.y);
+            const thetaB = Math.atan2(player.y, player.x);
+            const thetaG = goblin.theta;
 
-            // Calculate current state
-            const rb = length(player.x, player.y); // boat radius
-            const thetaB = Math.atan2(player.y, player.x); // boat angle
-            const thetaG = goblin.theta; // goblin angle
-
-            // Predicted boat angle for smoother guidance
             const predX = player.x + player.vx * PREDICTION_TIME;
             const predY = player.y + player.vy * PREDICTION_TIME;
             const predictedAngle = Math.atan2(predY, predX);
 
-            // Target opposite angle
             const thetaOpp = wrapAngle(thetaG + Math.PI);
-
-            // Angular error
             const err = Math.abs(shortestAngularDiff(thetaB, thetaOpp));
 
-            // Clip to lake circle for cleaner visuals
             ctx.save();
             ctx.beginPath();
             ctx.arc(0, 0, LAKE_RADIUS, 0, Math.PI * 2);
@@ -900,22 +1348,17 @@
 
             let helperText = "";
 
-            // ===== PHASE DETECTION =====
-
-            // PHASE 1: Get to safe ring (too far out)
             if (rb > safeRadius + RING_TOL) {
                 helperText = "NEXT: Get inside the safe ring";
 
-                // Draw safe ring
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.4)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.5)';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
                 ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Draw radial line to safe ring
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.8)';
                 ctx.lineWidth = 3;
                 const norm = normalize(player.x, player.y);
                 const targetX = norm.x * safeRadius;
@@ -925,26 +1368,21 @@
                 ctx.lineTo(targetX, targetY);
                 ctx.stroke();
 
-                // Draw target point on ring
-                ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+                ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
                 ctx.beginPath();
                 ctx.arc(targetX, targetY, 5, 0, Math.PI * 2);
                 ctx.fill();
-            }
-            // PHASE 1b: Too close to center, move outward
-            else if (rb < safeRadius - RING_TOL) {
+            } else if (rb < safeRadius - RING_TOL) {
                 helperText = "NEXT: Move out to the ring, then circle";
 
-                // Draw safe ring
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.4)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.5)';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
                 ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Draw radial line outward
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.8)';
                 ctx.lineWidth = 3;
                 const angle = length(player.vx, player.vy) > 5 ? Math.atan2(player.vy, player.vx) : thetaB;
                 const targetX = Math.cos(angle) * safeRadius;
@@ -954,31 +1392,26 @@
                 ctx.lineTo(targetX, targetY);
                 ctx.stroke();
 
-                // Draw target point on ring
-                ctx.fillStyle = 'rgba(255, 255, 0, 0.8)';
+                ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
                 ctx.beginPath();
                 ctx.arc(targetX, targetY, 5, 0, Math.PI * 2);
                 ctx.fill();
-            }
-            // PHASE 3: Dash to shore (aligned and on ring)
-            else if (err <= ALIGN_TOL) {
+            } else if (err <= ALIGN_TOL) {
                 helperText = "NEXT: Sprint straight out to the shore NOW!";
 
-                // Draw safe ring (faded)
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.2)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.3)';
                 ctx.lineWidth = 1;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
                 ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Draw escape line (bright green, thicker)
                 const escapeStartX = Math.cos(thetaOpp) * safeRadius;
                 const escapeStartY = Math.sin(thetaOpp) * safeRadius;
                 const escapeEndX = Math.cos(thetaOpp) * LAKE_RADIUS;
                 const escapeEndY = Math.sin(thetaOpp) * LAKE_RADIUS;
 
-                ctx.strokeStyle = 'rgba(0, 255, 0, 0.9)';
+                ctx.strokeStyle = 'rgba(91, 154, 104, 0.9)';
                 ctx.lineWidth = 4;
                 ctx.setLineDash([8, 6]);
                 ctx.beginPath();
@@ -986,43 +1419,36 @@
                 ctx.lineTo(escapeEndX, escapeEndY);
                 ctx.stroke();
 
-                // Draw EXIT marker on shore
-                ctx.fillStyle = 'rgba(0, 255, 0, 0.8)';
+                ctx.fillStyle = 'rgba(91, 154, 104, 0.9)';
                 ctx.font = 'bold 14px Arial';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText('EXIT', escapeEndX, escapeEndY);
 
-                // Draw pulsing target dot
                 const pulse = Math.sin(performance.now() / 200) * 0.3 + 0.7;
-                ctx.fillStyle = `rgba(0, 255, 0, ${pulse})`;
+                ctx.fillStyle = `rgba(91, 154, 104, ${pulse})`;
                 ctx.beginPath();
                 ctx.arc(escapeEndX, escapeEndY, 8, 0, Math.PI * 2);
                 ctx.fill();
-            }
-            // PHASE 2: Orbit to opposite goblin (on ring but not aligned)
-            else {
+            } else {
                 helperText = "NEXT: Circle on the ring until you're opposite the goblin";
 
-                // Draw safe ring (prominent)
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.6)';
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
                 ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Draw arc with clear direction
                 const angleDiff = shortestAngularDiff(predictedAngle, thetaOpp);
-                const arcDirection = angleDiff > 0; // true = counter-clockwise
+                const arcDirection = angleDiff > 0;
 
-                ctx.strokeStyle = 'rgba(255, 200, 0, 0.8)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.9)';
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.arc(0, 0, safeRadius, predictedAngle, thetaOpp, !arcDirection);
                 ctx.stroke();
 
-                // Draw directional arrows along the arc
                 const numArrows = 3;
                 for (let i = 1; i <= numArrows; i++) {
                     const t = i / (numArrows + 1);
@@ -1030,11 +1456,10 @@
                     const arrowX = Math.cos(arcAngle) * safeRadius;
                     const arrowY = Math.sin(arcAngle) * safeRadius;
 
-                    // Draw small arrow
                     const arrowSize = 8;
                     const tangentAngle = arcAngle + (arcDirection ? Math.PI / 2 : -Math.PI / 2);
 
-                    ctx.fillStyle = 'rgba(255, 200, 0, 0.8)';
+                    ctx.fillStyle = 'rgba(218, 165, 32, 0.9)';
                     ctx.beginPath();
                     ctx.moveTo(
                         arrowX + Math.cos(tangentAngle) * arrowSize,
@@ -1052,17 +1477,16 @@
                     ctx.fill();
                 }
 
-                // Draw pulsing target dot at opposite point
                 const targetX = Math.cos(thetaOpp) * safeRadius;
                 const targetY = Math.sin(thetaOpp) * safeRadius;
                 const pulse = Math.sin(performance.now() / 200) * 0.3 + 0.7;
 
-                ctx.fillStyle = `rgba(255, 255, 0, ${pulse})`;
+                ctx.fillStyle = `rgba(218, 165, 32, ${pulse})`;
                 ctx.beginPath();
                 ctx.arc(targetX, targetY, 6, 0, Math.PI * 2);
                 ctx.fill();
 
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
+                ctx.strokeStyle = 'rgba(218, 165, 32, 0.7)';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.arc(targetX, targetY, 10, 0, Math.PI * 2);
@@ -1072,14 +1496,13 @@
             ctx.setLineDash([]);
             ctx.restore();
 
-            // Draw helper text label (outside clip, in screen coordinates)
             if (helperText) {
                 ctx.save();
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillStyle = 'rgba(74, 58, 40, 0.9)';
                 ctx.fillRect(-150, -LAKE_RADIUS - 50, 300, 40);
 
-                ctx.fillStyle = '#ffeb3b';
-                ctx.font = 'bold 16px Arial';
+                ctx.fillStyle = '#f4d03f';
+                ctx.font = 'bold 16px Georgia';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
@@ -1099,15 +1522,34 @@
 
             if (won) {
                 gameOverDiv.classList.add('win');
-                resultText.textContent = 'You Win!';
+                resultText.textContent = 'Victory!';
                 resultDetail.textContent = `You escaped in ${timer.toFixed(1)} seconds!`;
+                createVictoryParticles();
             } else {
                 gameOverDiv.classList.add('lose');
-                resultText.textContent = 'You Lose!';
+                resultText.textContent = 'Caught!';
                 resultDetail.textContent = `The goblin caught you after ${timer.toFixed(1)} seconds!`;
             }
 
+            const statsRow = document.getElementById('statsRow');
+            statsRow.innerHTML = `
+                <div class="stat-chip">⏱ ${timer.toFixed(1)}s</div>
+                <div class="stat-chip">⚡ ${speedRatio.toFixed(1)}× Speed</div>
+                <div class="stat-chip">${aiControlEnabled ? '🤖 AI' : '👤 Manual'}</div>
+            `;
+
             gameOverDiv.classList.add('show');
+        }
+
+        function createVictoryParticles() {
+            const particles = document.createElement('div');
+            particles.className = 'victory-particles';
+            for (let i = 0; i < 9; i++) {
+                const leaf = document.createElement('div');
+                leaf.className = 'leaf';
+                particles.appendChild(leaf);
+            }
+            document.getElementById('gameStage').appendChild(particles);
         }
 
         // ===== GAME LOOP =====
@@ -1115,7 +1557,6 @@
             let dt = (currentTime - lastTime) / 1000;
             lastTime = currentTime;
 
-            // Clamp dt to prevent physics explosions
             dt = clamp(dt, 0, MAX_DT);
 
             update(dt);
@@ -1124,9 +1565,9 @@
             requestAnimationFrame(gameLoop);
         }
 
-        // Start the game
         restart();
         gameLoop(performance.now());
+        updateSpeedCharm();
     </script>
 </body>
 </html>
