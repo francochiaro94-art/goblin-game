@@ -706,6 +706,14 @@
                 </div>
             </div>
 
+            <div class="control-card" id="radiusControl">
+                <div class="speed-inner">
+                    <label for="radiusSlider">Lake Radius</label>
+                    <input type="range" id="radiusSlider" min="80" max="250" step="10" value="150">
+                    <span id="radiusValue">150m</span>
+                </div>
+            </div>
+
             <div class="control-card" id="questLog">
                 <button class="quest-toggle" id="questToggle">
                     <span>Quest Log</span>
@@ -770,7 +778,7 @@
         const DATA_UPDATE_INTERVAL = 0.1; // 100ms
 
         // ===== CONSTANTS =====
-        const LAKE_RADIUS = Math.min(canvas.width, canvas.height) / (2 * dpr) * 0.38;
+        let LAKE_RADIUS = 150;
         const PLAYER_RADIUS = 8;
         const GOBLIN_RADIUS = 10;
         const PLAYER_MAX_SPEED = 120;
@@ -904,6 +912,14 @@
             speedRatio = parseFloat(e.target.value);
             speedValue.textContent = speedRatio.toFixed(1) + 'x faster';
             updateSpeedCharm();
+        });
+
+        const radiusSlider = document.getElementById('radiusSlider');
+        const radiusValue = document.getElementById('radiusValue');
+
+        radiusSlider.addEventListener('input', (e) => {
+            LAKE_RADIUS = parseFloat(e.target.value);
+            radiusValue.textContent = LAKE_RADIUS.toFixed(0) + 'm';
         });
 
         document.getElementById('questToggle').addEventListener('click', () => {
