@@ -487,8 +487,14 @@
                 const OUTER_RING = safeRadius + 15; // Outer boundary with margin
                 const TARGET_RING = safeRadius; // Ideal ring to orbit on
 
+                // Special case: At or near center (rb ≈ 0)
+                if (rb < 5) {
+                    // Move directly away from goblin (toward opposite side)
+                    dx = Math.cos(thetaOpp);
+                    dy = Math.sin(thetaOpp);
+                }
                 // Priority 1: OPPORTUNISTIC DASH - if well-aligned and anywhere inside safe zone, GO!
-                if (aiState === 'dash') {
+                else if (aiState === 'dash') {
                     // Once dashing, keep going unless severely misaligned
                     if (err > DASH_ALIGN_LOOSE) {
                         aiState = 'orbit'; // Abort dash if misalignment too large
