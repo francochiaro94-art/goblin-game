@@ -493,19 +493,18 @@
                     dx = Math.cos(thetaOpp);
                     dy = Math.sin(thetaOpp);
                 }
-                // Priority 1: OPPORTUNISTIC DASH - if well-aligned and anywhere inside safe zone, GO!
+                // Priority 1: DASH STATE - once committed, go straight to shore
                 else if (aiState === 'dash') {
-                    // Once dashing, keep going unless severely misaligned
-                    if (err > DASH_ALIGN_LOOSE) {
-                        aiState = 'orbit'; // Abort dash if misalignment too large
-                    } else {
-                        // Sprint straight to shore
-                        const norm = normalize(player.x, player.y);
-                        dx = norm.x;
-                        dy = norm.y;
-                    }
-                } else if (rb <= safeRadius && err <= DASH_ALIGN_TIGHT) {
-                    // Initiate dash: aligned well enough and inside safe zone
+                    // COMMIT to the dash - no turning back!
+                    // Just go straight radially outward to shore
+                    const norm = normalize(player.x, player.y);
+                    dx = norm.x;
+                    dy = norm.y;
+                    // Note: Game will end (win/lose) when reaching shore, so no need to check exit condition
+                }
+                // Check if we should initiate a dash
+                else if (rb <= safeRadius && err <= DASH_ALIGN_TIGHT) {
+                    // Conditions met: aligned well + inside safe zone -> COMMIT TO DASH!
                     aiState = 'dash';
                     const norm = normalize(player.x, player.y);
                     dx = norm.x;
