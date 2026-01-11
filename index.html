@@ -159,6 +159,41 @@
             background: #4caf50;
             color: white;
         }
+
+        #speedControl {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 2px solid #4caf50;
+            z-index: 10;
+            min-width: 200px;
+        }
+
+        #speedControl label {
+            display: block;
+            color: #4caf50;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        #speedSlider {
+            width: 100%;
+            cursor: pointer;
+            accent-color: #4caf50;
+        }
+
+        #speedValue {
+            display: block;
+            color: #e8f5e9;
+            font-size: 13px;
+            text-align: center;
+            margin-top: 6px;
+        }
     </style>
 </head>
 <body>
@@ -168,6 +203,12 @@
     </div>
 
     <button id="helperBtn">Helper: Off</button>
+
+    <div id="speedControl">
+        <label for="speedSlider">Goblin Speed</label>
+        <input type="range" id="speedSlider" min="0.5" max="4.3" step="0.1" value="4.0">
+        <span id="speedValue">4.0x faster</span>
+    </div>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -181,7 +222,7 @@
         <h3>🎯 How to Win</h3>
         <p>• Row with arrow keys or mouse/trackpad</p>
         <p>• Reach the shore before the goblin catches you</p>
-        <p>• The goblin runs 4× faster than you row</p>
+        <p>• Adjust goblin speed with the slider (0.5x-4.3x)</p>
         <p>• Use spiral patterns to confuse the goblin</p>
         <p>• Press H to toggle helper guide</p>
     </div>
@@ -210,15 +251,25 @@
         const PLAYER_MAX_SPEED = 120; // px/s
         const PLAYER_ACCEL = 400; // px/s^2 (increased for better responsiveness)
         const PLAYER_DRAG = 0.98; // per frame (multiplier) - much gentler drag
-        const GOBLIN_SPEED = PLAYER_MAX_SPEED * 4; // px/s
         const CATCH_ARC_THRESHOLD = 22; // px arc distance for catching
         const PREDICTION_HORIZON = 0.35; // seconds
         const MAX_DT = 0.05; // clamp frame time spikes
 
-        // Helper math constants
-        const SPEED_RATIO = 4; // k = 4 (goblin is 4x faster)
-        const CRITICAL_RADIUS = LAKE_RADIUS / SPEED_RATIO; // r* = R/k
-        const SAFE_RADIUS = CRITICAL_RADIUS * 0.95; // rSafe (with safety margin)
+        // Speed ratio (adjustable via slider)
+        let speedRatio = 4.0; // k (goblin speed multiplier)
+
+        // Helper functions to calculate dynamic values
+        function getGoblinSpeed() {
+            return PLAYER_MAX_SPEED * speedRatio;
+        }
+
+        function getCriticalRadius() {
+            return LAKE_RADIUS / speedRatio; // r* = R/k
+        }
+
+        function getSafeRadius() {
+            return getCriticalRadius() * 0.95; // rSafe (with safety margin)
+        }
 
         // ===== HELPER FUNCTIONS =====
         function clamp(value, min, max) {
@@ -322,6 +373,15 @@
         document.getElementById('restartBtn').addEventListener('click', restart);
         document.getElementById('helperBtn').addEventListener('click', toggleHelper);
 
+        // Speed slider control
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+
+        speedSlider.addEventListener('input', (e) => {
+            speedRatio = parseFloat(e.target.value);
+            speedValue.textContent = speedRatio.toFixed(1) + 'x faster';
+        });
+
         function toggleHelper() {
             helperEnabled = !helperEnabled;
             const helperBtn = document.getElementById('helperBtn');
@@ -423,7 +483,7 @@
 
             // Compute shortest path to target
             const angleDiff = shortestAngularDiff(goblin.theta, targetAngle);
-            const goblinAngularSpeed = GOBLIN_SPEED / LAKE_RADIUS; // radians per second
+            const goblinAngularSpeed = getGoblinSpeed() / LAKE_RADIUS; // radians per second
             const maxMove = goblinAngularSpeed * dt;
 
             // Move goblin (don't overshoot)
@@ -652,6 +712,9 @@
             const ALIGN_TOL = 0.20; // ~11 degrees angular alignment tolerance
             const PREDICTION_TIME = 0.25; // seconds for prediction
 
+            // Get current safe radius (dynamic based on speed ratio)
+            const safeRadius = getSafeRadius();
+
             // Calculate current state
             const rb = length(player.x, player.y); // boat radius
             const thetaB = Math.atan2(player.y, player.x); // boat angle
@@ -679,7 +742,7 @@
             // ===== PHASE DETECTION =====
 
             // PHASE 1: Get to safe ring (too far out)
-            if (rb > SAFE_RADIUS + RING_TOL) {
+            if (rb > safeRadius + RING_TOL) {
                 helperText = "NEXT: Get inside the safe ring";
 
                 // Draw safe ring
@@ -687,15 +750,15 @@
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
-                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
                 // Draw radial line to safe ring
                 ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)';
                 ctx.lineWidth = 3;
                 const norm = normalize(player.x, player.y);
-                const targetX = norm.x * SAFE_RADIUS;
-                const targetY = norm.y * SAFE_RADIUS;
+                const targetX = norm.x * safeRadius;
+                const targetY = norm.y * safeRadius;
                 ctx.beginPath();
                 ctx.moveTo(player.x, player.y);
                 ctx.lineTo(targetX, targetY);
@@ -708,7 +771,7 @@
                 ctx.fill();
             }
             // PHASE 1b: Too close to center, move outward
-            else if (rb < SAFE_RADIUS - RING_TOL) {
+            else if (rb < safeRadius - RING_TOL) {
                 helperText = "NEXT: Move out to the ring, then circle";
 
                 // Draw safe ring
@@ -716,15 +779,15 @@
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
-                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
                 // Draw radial line outward
                 ctx.strokeStyle = 'rgba(255, 255, 0, 0.7)';
                 ctx.lineWidth = 3;
                 const angle = length(player.vx, player.vy) > 5 ? Math.atan2(player.vy, player.vx) : thetaB;
-                const targetX = Math.cos(angle) * SAFE_RADIUS;
-                const targetY = Math.sin(angle) * SAFE_RADIUS;
+                const targetX = Math.cos(angle) * safeRadius;
+                const targetY = Math.sin(angle) * safeRadius;
                 ctx.beginPath();
                 ctx.moveTo(player.x, player.y);
                 ctx.lineTo(targetX, targetY);
@@ -745,12 +808,12 @@
                 ctx.lineWidth = 1;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
-                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
                 // Draw escape line (bright green, thicker)
-                const escapeStartX = Math.cos(thetaOpp) * SAFE_RADIUS;
-                const escapeStartY = Math.sin(thetaOpp) * SAFE_RADIUS;
+                const escapeStartX = Math.cos(thetaOpp) * safeRadius;
+                const escapeStartY = Math.sin(thetaOpp) * safeRadius;
                 const escapeEndX = Math.cos(thetaOpp) * LAKE_RADIUS;
                 const escapeEndY = Math.sin(thetaOpp) * LAKE_RADIUS;
 
@@ -785,7 +848,7 @@
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 8]);
                 ctx.beginPath();
-                ctx.arc(0, 0, SAFE_RADIUS, 0, Math.PI * 2);
+                ctx.arc(0, 0, safeRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
                 // Draw arc with clear direction
@@ -795,7 +858,7 @@
                 ctx.strokeStyle = 'rgba(255, 200, 0, 0.8)';
                 ctx.lineWidth = 3;
                 ctx.beginPath();
-                ctx.arc(0, 0, SAFE_RADIUS, predictedAngle, thetaOpp, !arcDirection);
+                ctx.arc(0, 0, safeRadius, predictedAngle, thetaOpp, !arcDirection);
                 ctx.stroke();
 
                 // Draw directional arrows along the arc
@@ -803,8 +866,8 @@
                 for (let i = 1; i <= numArrows; i++) {
                     const t = i / (numArrows + 1);
                     const arcAngle = predictedAngle + angleDiff * t;
-                    const arrowX = Math.cos(arcAngle) * SAFE_RADIUS;
-                    const arrowY = Math.sin(arcAngle) * SAFE_RADIUS;
+                    const arrowX = Math.cos(arcAngle) * safeRadius;
+                    const arrowY = Math.sin(arcAngle) * safeRadius;
 
                     // Draw small arrow
                     const arrowSize = 8;
@@ -829,8 +892,8 @@
                 }
 
                 // Draw pulsing target dot at opposite point
-                const targetX = Math.cos(thetaOpp) * SAFE_RADIUS;
-                const targetY = Math.sin(thetaOpp) * SAFE_RADIUS;
+                const targetX = Math.cos(thetaOpp) * safeRadius;
+                const targetY = Math.sin(thetaOpp) * safeRadius;
                 const pulse = Math.sin(performance.now() / 200) * 0.3 + 0.7;
 
                 ctx.fillStyle = `rgba(255, 255, 0, ${pulse})`;
