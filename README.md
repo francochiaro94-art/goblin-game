@@ -4,7 +4,7 @@ An interactive puzzle game where you must escape a goblin by rowing across a cir
 
 ## 🚀 Play Now
 
-**[▶️ Click Here to Play](https://francochiaro94-art.github.io/goblin-game/)**
+**[▶️ Click Here to Play](https://francochiaro.github.io/goblin-game/)**
 
 Or open locally:
 ```bash
